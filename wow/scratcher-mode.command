@@ -17,6 +17,7 @@ MARK=".scratcher-mode"
 say()  { printf '%s\n' "$*"; }
 die()  { say ""; say "✗ $*"; say ""; read -r -p "Press Return to close." _; exit 1; }
 ask()  { local a; read -r -p "$1 [y/N] " a; [ "$a" = "y" ] || [ "$a" = "Y" ]; }
+ask_yes() { local a; read -r -p "$1 [Y/n] " a; [ "$a" != "n" ] && [ "$a" != "N" ]; }
 
 # ---- find the WOW ---------------------------------------------------------------
 WOW=""
@@ -55,7 +56,9 @@ if [ ! -f "$WOW/$MARK" ]; then
   fi
   cp -X "$WOW/settings.txt" "$BACKUP/settings-normal.txt" || die "Couldn't back up settings.txt"
 
-  if ask "Also park your other beats & samples on this Mac (keeps the WOW lean, avoids landing on them)?"; then
+  # The WOW caps total beat+sample audio at ~2.5 min and may load files in copy order,
+  # so leftover beats can crowd the Scratcher files out. Parking is the default.
+  if ask_yes "Park your other beats & samples on this Mac while in Scratcher mode? (recommended)"; then
     for d in samples beats; do
       for f in "$WOW/$d"/*; do
         [ -f "$f" ] || continue

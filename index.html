@@ -231,12 +231,12 @@
 
     <div class="card">
       <h2>Control tone</h2>
-      <p class="note" style="margin-top:0">1500 Hz + phased 3rd harmonic · 48 kHz · 16-bit WAV · fits the WOW's 30 s sample limit.</p>
+      <p class="note" style="margin-top:0">1500 Hz + phased 3rd harmonic · mono 44.1 kHz 16-bit (same format as the WOW's stock samples) · under the 30 s limit.</p>
       <div class="row">
         <select id="toneLen"><option value="15">15 s</option><option value="29" selected>29 s</option></select>
         <button id="toneBtn">Download WAV</button>
       </div>
-      <p class="note">Pilot tone (for <b>beats</b> folder, pilot-fader mode): 18 kHz · 48 kHz · 60 s loop.</p>
+      <p class="note">Pilot tone (for <b>beats</b> folder, pilot-fader mode): 18 kHz · stereo 44.1 kHz · 10 s loop.</p>
       <div class="row"><button id="pilotBtn">Download pilot WAV</button></div>
     </div>
   </aside>
@@ -1190,40 +1190,28 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => { if (node && e.code === 'KeyC') node.port.postMessage({ type: 'softCut', on: false }); });
 
 // ---------- control tone WAV ----------
+function wavDownload(name, sr, ch, n, sampleAt) {
+  const bytes = 44 + n * 2 * ch; const buf = new ArrayBuffer(bytes); const dv = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); dv.setUint32(4, bytes - 8, true); w(8, 'WAVE'); w(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, ch, true); dv.setUint32(24, sr, true);
+  dv.setUint32(28, sr * 2 * ch, true); dv.setUint16(32, 2 * ch, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 2 * ch, true);
+  const out = new Int16Array(buf, 44);
+  for (let i = 0; i < n; i++) { const v = sampleAt(i); for (let c = 0; c < ch; c++) out[i * ch + c] = v; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+// Formats match the WOW's own stock files: samples mono 44.1 kHz, beats stereo 44.1 kHz, 16-bit.
 $('toneBtn').addEventListener('click', () => {
-  // WOW samples: max 30 s, 48 kHz 16-bit recommended. 1500 Hz = exactly 32 samples/cycle at 48 kHz -> seamless loop.
-  const secs = parseInt($('toneLen').value, 10), sr = 48000, n = sr * secs;
-  const bytes = 44 + n * 4; const buf = new ArrayBuffer(bytes); const dv = new DataView(buf);
-  const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
-  w(0, 'RIFF'); dv.setUint32(4, bytes - 8, true); w(8, 'WAVE'); w(12, 'fmt ');
-  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 2, true); dv.setUint32(24, sr, true);
-  dv.setUint32(28, sr * 4, true); dv.setUint16(32, 4, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 4, true);
-  const per = new Int16Array(32);
-  for (let i = 0; i < 32; i++) {
-    const th = 2 * Math.PI * i / 32;
-    per[i] = Math.round((Math.cos(th) + 0.3 * Math.cos(3 * th + Math.PI / 2)) / 1.25 * 0.89 * 32767);
-  }
-  const out = new Int16Array(buf, 44);
-  for (let i = 0; i < n; i++) { const v = per[i & 31]; out[2 * i] = v; out[2 * i + 1] = v; }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
-  a.download = `scratcher-control-tone-${secs}s.wav`; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  const secs = parseInt($('toneLen').value, 10), sr = 44100;
+  const per = new Int16Array(441); // 441 samples = exactly 15 cycles of 1500 Hz → seamless loop
+  for (let i = 0; i < 441; i++) { const th = 2 * Math.PI * 1500 * i / sr; per[i] = Math.round((Math.cos(th) + 0.3 * Math.cos(3 * th + Math.PI / 2)) / 1.25 * 0.89 * 32767); }
+  wavDownload('00-scratcher-control.wav', sr, 1, sr * secs, i => per[i % 441]);
 });
-
 $('pilotBtn').addEventListener('click', () => {
-  const sr = 48000, secs = 60, n = sr * secs; // 18 kHz at 48 kHz = 3 cycles per 8 samples → seamless loop
-  const bytes = 44 + n * 4; const buf = new ArrayBuffer(bytes); const dv = new DataView(buf);
-  const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
-  w(0, 'RIFF'); dv.setUint32(4, bytes - 8, true); w(8, 'WAVE'); w(12, 'fmt ');
-  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 2, true); dv.setUint32(24, sr, true);
-  dv.setUint32(28, sr * 4, true); dv.setUint16(32, 4, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 4, true);
-  const out = new Int16Array(buf, 44);
-  for (let i = 0; i < n; i++) { const v = Math.round(Math.sin(2 * Math.PI * 3 * (i % 8) / 8) * 0.7 * 32767); out[2 * i] = v; out[2 * i + 1] = v; }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
-  a.download = 'scratcher-pilot-18k-60s.wav'; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  const sr = 44100; // 49 samples = exactly 20 cycles of 18 kHz → seamless loop
+  wavDownload('00-scratcher-pilot.wav', sr, 2, sr * 10, i => Math.round(Math.sin(2 * Math.PI * 20 * (i % 49) / 49) * 0.7 * 32767));
 });
 
 // ---------- built-in test loop (boom-bap + an "ahh" stab) ----------
