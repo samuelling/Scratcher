@@ -20,16 +20,33 @@ ask()  { local a; read -r -p "$1 [y/N] " a; [ "$a" = "y" ] || [ "$a" = "Y" ]; }
 ask_yes() { local a; read -r -p "$1 [Y/n] " a; [ "$a" != "n" ] && [ "$a" != "N" ]; }
 
 # ---- find the WOW ---------------------------------------------------------------
+# A WOW is a folder holding settings.txt (mentioning wowmachine or fader_left) next to samples/ and beats/.
+is_wow() {
+  [ -f "$1/settings.txt" ] || return 1
+  grep -qiE 'wowmachine|fader_left' "$1/settings.txt" 2>/dev/null
+}
 WOW=""
-for v in "$VOLROOT"/*; do
-  [ -f "$v/settings.txt" ] || continue
-  if grep -qi '^\[wowmachine\]' "$v/settings.txt" 2>/dev/null; then
-    if [ -n "$WOW" ]; then die "Found more than one WOW-looking drive. Unplug the extras and try again."; fi
+if [ $# -ge 1 ]; then
+  WOW="${1%/}"
+else
+  for v in "$VOLROOT"/* "$VOLROOT"/*/*; do
+    [ -d "$v" ] || continue
+    is_wow "$v" || continue
+    if [ -n "$WOW" ] && [ "$WOW" != "$v" ]; then die "Found more than one WOW-looking folder ($WOW and $v). Unplug the extras, or drag the right one in."; fi
     WOW="$v"
-  fi
-done
-[ -n "$WOW" ] || die "No WOW found. Connect it over USB-C and check it shows up in Finder (a drive with settings.txt)."
-[ -d "$WOW/samples" ] && [ -d "$WOW/beats" ] || die "Found $WOW but it has no samples/ and beats/ folders."
+  done
+fi
+if [ -z "$WOW" ]; then
+  say "Couldn't find the WOW automatically. Drives visible right now:"
+  ls -1 "$VOLROOT" 2>/dev/null | sed 's/^/    /'
+  say ""
+  say "Drag the WOW's drive (or the folder containing settings.txt) from Finder into this window, then press Return:"
+  read -r WOW
+  WOW="${WOW%/}"; WOW="${WOW%\ }"; WOW="$(printf '%s' "$WOW" | sed -e "s/^'//" -e "s/'$//" -e 's/\\ / /g' -e 's/[[:space:]]*$//')"
+fi
+[ -n "$WOW" ] && [ -d "$WOW" ] || die "That isn't a folder: $WOW"
+[ -f "$WOW/settings.txt" ] || die "No settings.txt in $WOW. If macOS asked whether Terminal may access a removable volume, allow it (System Settings → Privacy & Security → Files and Folders) and try again."
+[ -d "$WOW/samples" ] && [ -d "$WOW/beats" ] || die "Found settings.txt in $WOW but no samples/ and beats/ folders next to it."
 say "WOW found at: $WOW"
 say ""
 
