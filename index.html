@@ -196,6 +196,8 @@
       <div class="row"><button id="calBtn" class="primary">Calibrate (motor on, hands off)</button></div>
       <div class="calres" id="calRes">not calibrated — using nominal 1×</div>
       <div class="row"><label>Flip direction</label><button id="flipBtn">off</button></div>
+      <div class="row"><button id="recBtn">Record 10 s diagnostic</button><span class="calres" id="recRes"></span></div>
+      <p class="note">Captures the raw WOW input, live input, output and fader as a WAV you can send for debugging. Scratch, cut and let it ride while it records.</p>
     </div>
 
     <div class="card">
@@ -656,6 +658,9 @@ class FlutterProcessor extends AudioWorkletProcessor {
       case 'simHand': this.sim.hand = m.down; this.sim.handV = m.v; break;
       case 'simMotor': this.sim.motor = m.on; break;
       case 'simFader': this.sim.fader = m.v; break;
+      case 'record':
+        this.rec = { n: 0, N: Math.round(m.sec * sampleRate), buf: new Float32Array(Math.round(m.sec * sampleRate) * 4) };
+        break;
       case 'calibrate':
         this.pilot.resetMeasure();
         this.cal = { n: 0, N: Math.round(1.5 * sampleRate), speeds: [], stat: 0, statN: 0, env: 0, envN: 0, active: 0 };
@@ -715,6 +720,11 @@ class FlutterProcessor extends AudioWorkletProcessor {
       const lL = liveL ? liveL[i] : 0, lR = liveR ? liveR[i] : 0;
       e.step(lL, lR, r, g, tmp);
       oL[i] = tmp[0]; if (oR !== oL) oR[i] = tmp[1];
+      const rec = this.rec;
+      if (rec) { // diagnostic capture: raw WOW in, live in, output, fader gain
+        const k = rec.n * 4; rec.buf[k] = c; rec.buf[k + 1] = lL; rec.buf[k + 2] = tmp[0]; rec.buf[k + 3] = g;
+        if (++rec.n >= rec.N) { this.port.postMessage({ type: 'recorded', buf: rec.buf, sr: sampleRate }, [rec.buf.buffer]); this.rec = null; }
+      }
 
       const ac = Math.abs(c); if (ac > this.ctrlPk) this.ctrlPk = ac;
       const al = Math.max(Math.abs(lL), Math.abs(lR)); if (al > this.livePk) this.livePk = al;
@@ -941,6 +951,17 @@ function onMsg(m) {
   if (m.type === 'state') {
     st = m;
     if (m.bins) for (let i = 0; i < m.bins.length; i++) { bins[binHead] = m.bins[i]; binHead = (binHead + 1) % BIN_COUNT; }
+  } else if (m.type === 'recorded') {
+    const ch = 4, n = m.buf.length / ch, bytes = 44 + m.buf.length * 4;
+    const buf = new ArrayBuffer(bytes), dv = new DataView(buf);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); dv.setUint32(4, bytes - 8, true); w(8, 'WAVE'); w(12, 'fmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 3, true); dv.setUint16(22, ch, true); dv.setUint32(24, m.sr, true);
+    dv.setUint32(28, m.sr * ch * 4, true); dv.setUint16(32, ch * 4, true); dv.setUint16(34, 32, true); w(36, 'data'); dv.setUint32(40, m.buf.length * 4, true);
+    new Float32Array(buf, 44).set(m.buf);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+    a.download = 'scratcher-diagnostic.wav'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    $('recRes').textContent = 'saved scratcher-diagnostic.wav'; $('recBtn').disabled = false;
   } else if (m.type === 'calibrated') {
     const el = $('calRes');
     if (m.activeFrac < 0.9 || m.speed <= 0) { el.textContent = 'No steady control tone — check routing, balance knob, and that the tone is playing.'; el.className = 'calres bad'; return; }
@@ -1171,6 +1192,10 @@ $('calBtn').addEventListener('click', () => {
   node.port.postMessage({ type: 'params', calib: 1, flip: false });
   S.flip = false;
   setTimeout(() => node.port.postMessage({ type: 'calibrate' }), 150);
+});
+$('recBtn').addEventListener('click', () => {
+  if (!node) return; $('recBtn').disabled = true; $('recRes').textContent = 'recording 10 s…';
+  node.port.postMessage({ type: 'record', sec: 10 });
 });
 $('jumpBtn').addEventListener('click', () => node && node.port.postMessage({ type: 'jump' }));
 $('freezeBtn').addEventListener('click', () => toggleFreeze());

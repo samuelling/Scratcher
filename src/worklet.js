@@ -54,6 +54,9 @@ class FlutterProcessor extends AudioWorkletProcessor {
       case 'simHand': this.sim.hand = m.down; this.sim.handV = m.v; break;
       case 'simMotor': this.sim.motor = m.on; break;
       case 'simFader': this.sim.fader = m.v; break;
+      case 'record':
+        this.rec = { n: 0, N: Math.round(m.sec * sampleRate), buf: new Float32Array(Math.round(m.sec * sampleRate) * 4) };
+        break;
       case 'calibrate':
         this.pilot.resetMeasure();
         this.cal = { n: 0, N: Math.round(1.5 * sampleRate), speeds: [], stat: 0, statN: 0, env: 0, envN: 0, active: 0 };
@@ -113,6 +116,11 @@ class FlutterProcessor extends AudioWorkletProcessor {
       const lL = liveL ? liveL[i] : 0, lR = liveR ? liveR[i] : 0;
       e.step(lL, lR, r, g, tmp);
       oL[i] = tmp[0]; if (oR !== oL) oR[i] = tmp[1];
+      const rec = this.rec;
+      if (rec) { // diagnostic capture: raw WOW in, live in, output, fader gain
+        const k = rec.n * 4; rec.buf[k] = c; rec.buf[k + 1] = lL; rec.buf[k + 2] = tmp[0]; rec.buf[k + 3] = g;
+        if (++rec.n >= rec.N) { this.port.postMessage({ type: 'recorded', buf: rec.buf, sr: sampleRate }, [rec.buf.buffer]); this.rec = null; }
+      }
 
       const ac = Math.abs(c); if (ac > this.ctrlPk) this.ctrlPk = ac;
       const al = Math.max(Math.abs(lL), Math.abs(lR)); if (al > this.livePk) this.livePk = al;
