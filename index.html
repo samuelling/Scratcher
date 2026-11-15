@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SCRATCHER — live DVS for the WOW</title>
+<style>
+  :root {
+    --bg: #121212; --panel: #1b1b1b; --line: #2c2c2c; --ink: #e9e5dc; --dim: #8b867c;
+    --hot: #ff5a1f; --ok: #59d38c; --warn: #f3c94d; --blue: #6bb6ff;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 14px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font: 800 22px/1 var(--mono); letter-spacing: 0.18em; }
+  header h1 span { color: var(--hot); }
+  header .sub { color: var(--dim); font-size: 13px; }
+  header .spacer { flex: 1; }
+  button, select, input[type=file]::file-selector-button {
+    background: #262626; color: var(--ink); border: 1px solid #3a3a3a; border-radius: 6px;
+    padding: 6px 10px; font: inherit; cursor: pointer;
+  }
+  button:hover, select:hover { border-color: #555; }
+  button.primary { background: var(--hot); border-color: var(--hot); color: #111; font-weight: 700; }
+  button.on { background: var(--ink); color: #111; border-color: var(--ink); }
+  select { max-width: 100%; }
+  main { display: grid; grid-template-columns: minmax(340px, 1fr) 360px; gap: 16px; padding: 16px 20px 40px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .card h2 { margin: 0 0 10px; font: 700 11px/1 var(--mono); letter-spacing: 0.16em; color: var(--dim); text-transform: uppercase; }
+  .stage { display: flex; flex-direction: column; gap: 14px; }
+  .deck { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
+  @media (max-width: 640px) { .deck { grid-template-columns: 1fr; } }
+  #platter { width: 300px; height: 300px; touch-action: none; cursor: grab; display: block; }
+  #platter.dragging { cursor: grabbing; }
+  .readouts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ro { background: #141414; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .ro .k { font: 600 10px/1 var(--mono); letter-spacing: 0.14em; color: var(--dim); }
+  .ro .v { font: 700 24px/1.2 var(--mono); margin-top: 4px; }
+  .ro .v small { font-size: 12px; color: var(--dim); font-weight: 500; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; grid-column: 1 / -1; }
+  .chip { font: 700 11px/1 var(--mono); letter-spacing: 0.1em; padding: 6px 8px; border-radius: 5px; border: 1px solid #333; color: #555; }
+  .chip.lit { color: #111; }
+  .chip.sig.lit { background: var(--ok); border-color: var(--ok); }
+  .chip.lock.lit { background: var(--blue); border-color: var(--blue); }
+  .chip.live.lit { background: var(--hot); border-color: var(--hot); }
+  .chip.frz.lit { background: var(--warn); border-color: var(--warn); }
+  canvas.strip { width: 100%; height: 90px; display: block; background: #0d0d0d; border-radius: 6px; }
+  canvas.meter { width: 100%; height: 26px; display: block; background: #0d0d0d; border-radius: 5px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+  .row label { min-width: 92px; color: var(--dim); font-size: 12px; }
+  .row .grow { flex: 1; min-width: 120px; }
+  .row output { font: 12px var(--mono); color: var(--ink); min-width: 56px; text-align: right; }
+  input[type=range] { accent-color: var(--hot); }
+  .seg { display: inline-flex; border: 1px solid #3a3a3a; border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 6px 10px; }
+  .note { color: var(--dim); font-size: 12px; margin: 6px 0 0; }
+  .note b { color: var(--ink); }
+  .side { display: flex; flex-direction: column; gap: 14px; }
+  .meters { display: grid; grid-template-columns: 70px 1fr; gap: 6px 8px; align-items: center; font: 11px var(--mono); color: var(--dim); }
+  .bar { height: 8px; background: #0d0d0d; border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--ok); }
+  .calres { font: 12px var(--mono); color: var(--dim); }
+  .calres.good { color: var(--ok); } .calres.bad { color: var(--hot); }
+  details summary { cursor: pointer; color: var(--dim); font: 700 11px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; }
+  details ol { padding-left: 18px; margin: 10px 0 0; color: #cfcac0; font-size: 13px; }
+  details li { margin-bottom: 6px; }
+  kbd { font: 11px var(--mono); background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 4px; padding: 1px 5px; }
+  #gate-overlay { position: fixed; inset: 0; background: rgba(10,10,10,0.92); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  #gate-overlay .box { max-width: 460px; text-align: center; padding: 24px; }
+  #gate-overlay h2 { font: 800 30px/1 var(--mono); letter-spacing: 0.2em; margin: 0 0 12px; }
+  #gate-overlay p { color: var(--dim); }
+  .err { color: var(--hot); font-size: 12px; min-height: 1em; }
+</style>
+</head>
+<body>
+<div id="gate-overlay">
+  <div class="box">
+    <h2>SCRATCHER<span style="color:var(--hot)">.</span></h2>
+    <p>Scratch live audio with the Headache Sound WOW. Chrome on Mac, ideally through an audio interface. Use headphones if your live source is a microphone.</p>
+    <button class="primary" id="startBtn">Start audio</button>
+    <p class="err" id="startErr"></p>
+  </div>
+</div>
+
+<header>
+  <h1>SCRATCHER<span>.</span></h1>
+  <div class="sub">live-input DVS · WOW control tone → scratch whatever is coming in</div>
+  <div class="spacer"></div>
+  <div class="sub" id="latency"></div>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="card">
+      <div class="deck">
+        <canvas id="platter" width="600" height="600"></canvas>
+        <div class="readouts">
+          <div class="ro"><div class="k">SPEED</div><div class="v" id="roSpeed">0.00<small>×</small></div></div>
+          <div class="ro"><div class="k" id="lagKey">BEHIND LIVE</div><div class="v" id="roLag">0<small>ms</small></div></div>
+          <div class="ro"><div class="k">DIRECTION</div><div class="v" id="roDir">→</div></div>
+          <div class="ro"><div class="k">FADER</div><div class="v" id="roFader">0<small>%</small></div></div>
+          <div class="chips">
+            <span class="chip sig" id="chSig">SIGNAL</span>
+            <span class="chip lock" id="chLock">1× LOCK</span>
+            <span class="chip live" id="chLive">LIVE</span>
+            <span class="chip frz" id="chFrz">FROZEN</span>
+          </div>
+          <canvas class="meter" id="speedMeter" width="600" height="52" style="grid-column:1/-1"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tape — last 10 s of live input · <span style="color:var(--hot)">needle</span></h2>
+      <canvas class="strip" id="strip" width="1600" height="180"></canvas>
+      <div class="row" style="margin-bottom:0">
+        <button id="jumpBtn" title="Space">Jump to live <kbd>Space</kbd></button>
+        <button id="freezeBtn" title="F">Freeze <kbd>F</kbd></button>
+        <label style="min-width:auto">loop</label>
+        <input type="range" id="loopSec" min="0.5" max="16" step="0.5" value="4" style="width:120px">
+        <output id="loopSecOut">4.0 s</output>
+        <span class="note" style="margin:0">Hold <kbd>C</kbd> to cut</span>
+      </div>
+    </div>
+
+    <div class="card" id="simCard">
+      <h2>Virtual platter (test mode)</h2>
+      <p class="note" style="margin-top:0">Control source is set to <b>Virtual platter</b>: drag the record above with the mouse. The app synthesizes the same control tone the WOW plays and runs it through the real decoder.</p>
+      <div class="row">
+        <button id="simMotor" class="on">Motor on</button>
+        <label style="min-width:auto">WOW fader</label>
+        <input type="range" id="simFader" class="grow" min="0" max="1" step="0.01" value="1">
+      </div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>WOW setup</summary>
+        <ol>
+          <li>Download the <b>control tone</b> (right panel) and load it onto the WOW as a <b>sample</b>, the same way you load any scratch sample.</li>
+          <li>Turn the WOW's beat/sample <b>balance fully to sample</b>, so the looped beats don't mix into the control signal.</li>
+          <li>WOW output → an input on your interface. Live audio (synth, mic, OP-1, anything) → another input. Pick both above.</li>
+          <li>Motor on, hands off, fader open → press <b>Calibrate</b>. It measures 1× speed and the WOW's output level, so the WOW crossfader becomes Scratcher's fader.</li>
+          <li>Scratch. Hands off and the needle rides at live. Pull back and you're scratching the last few seconds; let go and it snaps back to live, unless Return is set to <b>Stay</b>.</li>
+          <li>Hit <b>Freeze</b> to capture a phrase and scratch it like a record. The tape stops recording and loops the last N seconds.</li>
+        </ol>
+      </details>
+    </div>
+  </section>
+
+  <aside class="side">
+    <div class="card">
+      <h2>Routing</h2>
+      <div class="row"><label>Control (WOW)</label><select id="ctrlDev" class="grow"></select></div>
+      <div class="row"><label>channel</label>
+        <div class="seg" id="ctrlCh"><button data-v="L">L</button><button data-v="R">R</button><button data-v="M">L+R</button></div>
+      </div>
+      <div class="row"><label>Live input</label><select id="liveDev" class="grow"></select></div>
+      <div class="row" id="liveFileRow" style="display:none"><label>file</label><input type="file" id="liveFile" accept="audio/*" class="grow"></div>
+      <div class="row"><label>channel</label>
+        <div class="seg" id="liveCh"><button data-v="S">Stereo</button><button data-v="L">L</button><button data-v="R">R</button><button data-v="M">L+R</button></div>
+      </div>
+      <div class="row" id="outRow"><label>Output</label><select id="outDev" class="grow"></select></div>
+      <div class="meters">
+        <span>WOW in</span><div class="bar"><i id="mCtrl"></i></div>
+        <span>live in</span><div class="bar"><i id="mLive"></i></div>
+        <span>out</span><div class="bar"><i id="mOut"></i></div>
+      </div>
+      <div class="row"><label>Volume</label><input type="range" id="outGain" class="grow" min="0" max="1.5" step="0.01" value="1"><output id="outGainOut">100%</output></div>
+      <p class="err" id="routeErr"></p>
+    </div>
+
+    <div class="card">
+      <h2>Calibrate</h2>
+      <div class="row"><button id="calBtn" class="primary">Calibrate (motor on, hands off)</button></div>
+      <div class="calres" id="calRes">not calibrated — using nominal 1×</div>
+      <div class="row"><label>Flip direction</label><button id="flipBtn">off</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Feel</h2>
+      <div class="row"><label>Smoothing</label><input type="range" id="smooth" class="grow" min="0.3" max="12" step="0.1" value="2"><output id="smoothOut">2.0 ms</output></div>
+      <p class="note">Lower is tighter and grittier; higher is silkier but laggier.</p>
+      <div class="row"><label>Return</label>
+        <div class="seg" id="mode"><button data-v="snap">Snap to live</button><button data-v="stay">Stay behind</button></div>
+      </div>
+      <div class="row"><label>Snap after</label><input type="range" id="snapDelay" class="grow" min="40" max="1500" step="10" value="180"><output id="snapDelayOut">180 ms</output></div>
+      <div class="row"><label>1× lock</label><button id="lockBtn" class="on">on</button></div>
+      <p class="note">Lock treats ±3% of normal speed as exactly 1×, so the motor's wobble doesn't drift the needle off live.</p>
+    </div>
+
+    <div class="card">
+      <h2>Fader</h2>
+      <div class="row"><label>Source</label>
+        <div class="seg" id="faderMode"><button data-v="wow">WOW crossfader</button><button data-v="open">Always open</button></div>
+      </div>
+      <div class="row"><label>Cut point</label><input type="range" id="faderLo" class="grow" min="0.01" max="0.5" step="0.01" value="0.08"><output id="faderLoOut">8%</output></div>
+      <div class="row"><label>Full open</label><input type="range" id="faderHi" class="grow" min="0.1" max="1" step="0.01" value="0.45"><output id="faderHiOut">45%</output></div>
+      <div class="row"><label>Noise gate</label><input type="range" id="gate" class="grow" min="-80" max="-30" step="1" value="-56"><output id="gateOut">-56 dB</output></div>
+    </div>
+
+    <div class="card">
+      <h2>Control tone</h2>
+      <p class="note" style="margin-top:0">1500 Hz + phased 3rd harmonic · 44.1 kHz · 16-bit WAV · loops seamlessly.</p>
+      <div class="row">
+        <select id="toneLen"><option value="120">2 min</option><option value="300" selected>5 min</option><option value="600">10 min</option></select>
+        <button id="toneBtn">Download WAV</button>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script type="text/plain" id="dsp-src">// FLUTTER DSP core — shared by the AudioWorklet and the Node test harness.
+// Control tone: s(θ) = cos θ + A3·cos(3θ + π/2), θ advancing at 2π·F0 per second at 1x.
+//  • zero crossings (2 per cycle) give |speed|
+//  • E[x·d³] (d = derivative) flips sign with direction, is invariant to gain, speed and polarity
+
+const F0 = 1500;
+const A3 = 0.3;
+const TONE_PEAK = 0.89; // linear peak used when rendering the tone file
+
+function toneSample(theta) {
+  return (Math.cos(theta) + A3 * Math.cos(3 * theta + Math.PI / 2)) / 1.25;
+}
+
+class ToneDecoder {
+  constructor(sr) {
+    this.sr = sr;
+    this.calib = 1;          // measured 1x speed ratio of the WOW
+    this.flip = false;
+    this.gate = 0.0015;      // absolute noise gate on the control input
+    this.hpA = Math.exp(-2 * Math.PI * 8 / sr);
+    this.hpX = 0; this.hpY = 0;
+    this.prev = 0;
+    this.env = 0;
+    this.n = 0;
+    this.state = 0;          // Schmitt state +1 / -1
+    this.pendingZC = -1;
+    this.lastTc = -1;
+    this.halfT = Infinity;
+    this.dir = 1;
+    this.dirScore = 1;
+    this.lastStat = 0;
+    this.active = false;
+    this.sxd3 = 0; this.sx2 = 0; this.sd2 = 0; this.cnt = 0; this.lobePeak = 0;
+    this.hwPeak = 0; this.hw1 = 0; this.hw2 = 0;
+    this.lxd3 = 0; this.lx2 = 0; this.ld2 = 0; this.lcnt = 0;
+    this.turnarounds = 0; this.prevLobePeak = 0;
+    this.posExact = 0;
+    this.posInt = 0;
+    this.v = 0;              // per-sample rate output (1 = normal speed)
+    this.rawSpeed = 0;       // unsigned, uncalibrated (for calibration)
+  }
+
+  get H1() { return this.sr / (2 * F0 * this.calib); }
+
+  resetLobe() { this.sxd3 = 0; this.sx2 = 0; this.sd2 = 0; this.cnt = 0; this.lobePeak = 0; this.lxd3 = 0; this.lx2 = 0; this.ld2 = 0; this.lcnt = 0; }
+
+  process(xin) {
+    const n = this.n++;
+    // DC / rumble removal
+    const y = this.hpA * (this.hpY + xin - this.hpX);
+    this.hpX = xin; this.hpY = y;
+    const prev = this.prev; this.prev = y;
+    const d = y - prev;
+    const ay = Math.abs(y);
+
+    // envelope: peak follower whose release scales with the tone period
+    const relT = Math.max(0.0015 * this.sr, 2.5 * Math.min(this.halfT, 0.04 * this.sr));
+    this.env = Math.max(ay, this.env * Math.exp(-1 / relT));
+
+    const wasActive = this.active;
+    this.active = this.env > this.gate;
+    if (!this.active) {
+      this.state = 0;
+      this.resetLobe();
+      this.lastTc = -1;
+      this.halfT = Infinity;
+      this.v = 0;
+      this.rawSpeed = 0;
+      return 0;
+    }
+    if (!wasActive) this.resetLobe();
+
+    // lobe statistics
+    const ym = 0.5 * (y + prev); // align signal with the half-sample derivative
+    // leaky moments spanning a few lobes (phase-averaged even when a lobe is only ~4 samples)
+    const tauS = Math.max(24, Math.min(1.5 * (this.halfT === Infinity ? 32 : this.halfT), 0.003 * this.sr));
+    const lk = Math.exp(-1 / tauS);
+    this.sxd3 = this.sxd3 * lk + ym * d * d * d;
+    this.sx2 = this.sx2 * lk + ym * ym;
+    this.sd2 = this.sd2 * lk + d * d;
+    this.cnt = this.cnt * lk + 1;
+    this.lxd3 += ym * d * d * d; this.lx2 += ym * ym; this.ld2 += d * d; this.lcnt++;
+    if (ay > this.lobePeak) this.lobePeak = ay;
+
+    // true zero crossing time (sub-sample)
+    if ((prev <= 0 && y > 0) || (prev >= 0 && y < 0)) {
+      const den = prev - y;
+      this.pendingZC = (n - 1) + (den !== 0 ? prev / den : 0);
+      this.hw2 = this.hw1; this.hw1 = this.hwPeak; this.hwPeak = 0;
+    }
+    if (ay > this.hwPeak) this.hwPeak = ay;
+
+    // Schmitt confirmation; threshold follows the last two half-wave peaks so it
+    // recovers within a cycle after a fader cut
+    const thr = Math.max(0.5 * this.gate, 0.22 * Math.min(this.env, Math.max(this.hw1, this.hwPeak)));
+    let confirmed = false;
+    if (this.state !== 1 && y > thr) { this.state = 1; confirmed = true; }
+    else if (this.state !== -1 && y < -thr) { this.state = -1; confirmed = true; }
+
+    if (confirmed && this.pendingZC >= 0) {
+      const tc = this.pendingZC;
+      const H1 = this.H1;
+      const momentStat = (xd3, x2, d2, N) => {
+        if (N < 3 || d2 <= 0 || x2 <= 0) return 0;
+        let st = (xd3 / N) / (Math.sqrt(x2 / N) * Math.pow(d2 / N, 1.5)) / 0.47; // ≈ ±1 clean
+        return this.flip ? -st : st;
+      };
+      const statLeaky = momentStat(this.sxd3, this.sx2, this.sd2, this.cnt);
+      const statLobe = momentStat(this.lxd3, this.lx2, this.ld2, this.lcnt);
+      let stat = statLeaky;
+      if (this.lastTc >= 0) {
+        let half = tc - this.lastTc;
+        if (half > 0.25) {
+          const longLobe = this.lcnt >= 10;
+          const pk = this.lobePeak, ppk = this.prevLobePeak || pk;
+          const levelJump = pk < 0.3 * ppk || pk > 3.3 * ppk;
+          if (levelJump && this.halfT !== Infinity && half > 1.7 * this.halfT) {
+            // fader cut/open: threshold lagged and skipped marks — count them (odd multiples)
+            const k = 2 * Math.round((half / this.halfT - 1) / 2) + 1;
+            if (stat > 0.2) this.dir = 1; else if (stat < -0.2) this.dir = -1;
+            this.posExact += this.dir * H1 * Math.min(k, 9);
+            half = half / k;
+          } else if (!levelJump && longLobe && Math.abs(statLobe) < 0.6 && this.halfT !== Infinity && half > 1.3 * this.halfT) {
+            // turnaround: the needle re-crossed the same mark — net travel 0, direction flips
+            this.dir = -this.dir;
+            this.turnarounds++;
+            this.sxd3 = 0; this.sx2 = 0; this.sd2 = 0; this.cnt = 0;
+            stat = 0;
+          } else {
+            if (longLobe) stat = statLobe;
+            if (stat > 0.2) this.dir = 1;
+            else if (stat < -0.2) this.dir = -1;
+            this.posExact += this.dir * H1;
+          }
+          this.halfT = half;
+          this.rawSpeed = (this.sr / (2 * F0)) / half;
+        }
+      }
+      this.lastStat = stat;
+      this.prevLobePeak = this.lobePeak; this.lobePeak = 0;
+      this.lxd3 = 0; this.lx2 = 0; this.ld2 = 0; this.lcnt = 0;
+      this.lastTc = tc;
+    }
+
+    // speed between crossings (decays if the next crossing is late)
+    let vmag = 0;
+    if (this.lastTc >= 0 && this.halfT !== Infinity) {
+      const tau = n - this.lastTc;
+      vmag = this.H1 / Math.max(this.halfT, tau);
+      if (tau > 0.12 * this.sr) vmag = 0;
+    }
+    const vEst = this.dir * vmag;
+
+    // integrate velocity, softly pulled toward the interpolated groove position,
+    // and never more than two half-cycles from the last confirmed mark
+    const before = this.posInt;
+    const H1 = this.H1;
+    let pred = this.posExact;
+    if (this.lastTc >= 0 && this.halfT !== Infinity) pred += this.dir * H1 * Math.min(1, (n - this.lastTc) / this.halfT);
+    let p = before + vEst + (pred - before) * 0.004;
+    if (p > this.posExact + 2 * H1) p = this.posExact + 2 * H1;
+    if (p < this.posExact - 2 * H1) p = this.posExact - 2 * H1;
+    this.posInt = p;
+    this.v = p - before;
+    return this.v;
+  }
+}
+
+class ScratchEngine {
+  constructor(sr, seconds = 32) {
+    this.sr = sr;
+    let len = 1; while (len < sr * seconds) len <<= 1;
+    this.len = len; this.mask = len - 1;
+    this.L = new Float32Array(len); this.R = new Float32Array(len);
+    this.w = 0;                  // absolute write count
+    this.play = 0;               // absolute play position
+    this.minLag = Math.round(0.0025 * sr);
+    this.rate = 0;
+    this.vs = 0;                 // smoothed velocity
+    this.smoothMs = 2;
+    this.lockEnabled = true;
+    this.locked = false;
+    this.steadyCount = 0;
+    this.mode = 'snap';          // 'snap' | 'stay'
+    this.snapDelay = Math.round(0.18 * sr);
+    this.xfade = 0; this.xfadeLen = Math.round(0.025 * sr); this.xfadePos = 0;
+    this.frozen = false; this.freezeW = 0; this.loopLen = Math.round(4 * sr);
+    this.gain = 0; this.outGain = 1;
+    this.started = false;
+    this.dcA = Math.exp(-2 * Math.PI * 6 / sr);
+    this.dxL = 0; this.dyL = 0; this.dxR = 0; this.dyR = 0;
+  }
+
+  setSmooth(ms) { this.smoothMs = ms; }
+
+  readCh(buf, pos) {
+    const i = Math.floor(pos), f = pos - i, m = this.mask;
+    const y0 = buf[(i - 1) & m], y1 = buf[i & m], y2 = buf[(i + 1) & m], y3 = buf[(i + 2) & m];
+    const c1 = 0.5 * (y2 - y0);
+    const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
+    const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+    return ((c3 * f + c2) * f + c1) * f + y1;
+  }
+
+  jumpToLive() {
+    if (this.frozen) return;
+    this.xfadePos = this.w - this.minLag;
+    this.xfade = 1;
+  }
+
+  setFrozen(on, loopSec) {
+    if (loopSec) this.loopLen = Math.min(Math.round(loopSec * this.sr), this.len - 8);
+    if (on && !this.frozen) { this.frozen = true; this.freezeW = this.w; }
+    else if (!on && this.frozen) { this.frozen = false; this.jumpToLive(); }
+  }
+
+  get lag() { return (this.frozen ? this.freezeW : this.w) - this.play; }
+
+  // v = decoder rate, fader = target gain (0..1), returns [l, r]
+  step(inL, inR, v, fader, out) {
+    if (!this.frozen) {
+      this.L[this.w & this.mask] = inL; this.R[this.w & this.mask] = inR;
+      this.w++;
+    }
+    if (!this.started) { this.play = this.w - this.minLag; this.started = true; }
+
+    const k = 1 - Math.exp(-1 / (Math.max(0.05, this.smoothMs) * 0.001 * this.sr));
+    this.vs += (v - this.vs) * k;
+    let rate = this.vs;
+
+    // steady 1x lock (motor running, hands off)
+    if (this.lockEnabled) {
+      const dev = Math.abs(this.vs - 1);
+      if (dev < 0.03) this.steadyCount++; else this.steadyCount = 0;
+      if (this.locked && dev > 0.06) this.locked = false;
+      if (!this.locked && this.steadyCount > 0.2 * this.sr) this.locked = true;
+      if (this.locked) rate = 1;
+    } else { this.locked = false; this.steadyCount = 0; }
+    this.rate = rate;
+
+    this.play += rate;
+    const top = (this.frozen ? this.freezeW : this.w);
+    if (this.frozen) {
+      const lo = top - this.loopLen, hi = top - 2;
+      while (this.play >= hi) this.play -= this.loopLen;
+      while (this.play < lo) this.play += this.loopLen;
+    } else {
+      if (this.play > top - this.minLag) this.play = top - this.minLag;
+      if (this.play < top - this.len + 4) this.play = top - this.len + 4;
+    }
+
+    // snap back to live after a scratch, once the platter is steady again
+    if (!this.frozen && this.mode === 'snap' && this.locked && this.xfade === 0 &&
+        this.steadyCount > this.snapDelay && this.lag > this.minLag + 48) {
+      this.jumpToLive();
+    }
+
+    let l = this.readCh(this.L, this.play), r = this.readCh(this.R, this.play);
+    if (this.xfade > 0) {
+      this.xfadePos += rate;
+      if (this.xfadePos > this.w - this.minLag) this.xfadePos = this.w - this.minLag;
+      const g = this.xfade / this.xfadeLen;
+      const e = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, g));
+      const l2 = this.readCh(this.L, this.xfadePos), r2 = this.readCh(this.R, this.xfadePos);
+      l = l * (1 - e) + l2 * e; r = r * (1 - e) + r2 * e;
+      this.xfade++;
+      if (this.xfade > this.xfadeLen) { this.play = this.xfadePos; this.xfade = 0; }
+    }
+
+    // fader smoothing (~0.7 ms) keeps cuts crisp but click-free
+    this.gain += (fader - this.gain) * 0.03;
+    // DC blocker: a stopped record is silence, not a held sample
+    this.dyL = this.dcA * (this.dyL + l - this.dxL); this.dxL = l;
+    this.dyR = this.dcA * (this.dyR + r - this.dxR); this.dxR = r;
+    const g = this.gain * this.outGain;
+    out[0] = this.dyL * g; out[1] = this.dyR * g;
+  }
+}
+
+function faderCurve(level, lo, hi) {
+  const t = Math.max(0, Math.min(1, (level - lo) / (hi - lo)));
+  return t * t * (3 - 2 * t);
+}
+
+if (typeof module !== 'undefined') module.exports = { F0, A3, TONE_PEAK, toneSample, ToneDecoder, ScratchEngine, faderCurve };
+
+// ---- AudioWorklet processor (appended after dsp.js) ----
+class FlutterProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    const sr = sampleRate;
+    this.dec = new ToneDecoder(sr);
+    this.eng = new ScratchEngine(sr);
+    this.faderMode = 'wow';
+    this.refLevel = 0.3;
+    this.faderLo = 0.08; this.faderHi = 0.45;
+    this.softCut = 1;
+    this.sim = { on: true, motor: true, hand: false, handV: 0, v: 0, theta: 0, fader: 1, seed: 1 };
+    this.cal = null;
+    this.binSize = 256; this.binAcc = 0; this.binN = 0; this.newBins = [];
+    this.reportEvery = Math.round(sr / 60); this.since = 0;
+    this.ctrlPk = 0; this.livePk = 0; this.outPk = 0;
+    this.tmp = [0, 0];
+    this.port.onmessage = (e) => this.onMsg(e.data);
+  }
+
+  onMsg(m) {
+    const d = this.dec, e = this.eng;
+    switch (m.type) {
+      case 'params':
+        if ('smoothMs' in m) e.setSmooth(m.smoothMs);
+        if ('mode' in m) e.mode = m.mode;
+        if ('snapDelay' in m) e.snapDelay = Math.round(m.snapDelay * 0.001 * sampleRate);
+        if ('lock' in m) e.lockEnabled = m.lock;
+        if ('faderMode' in m) this.faderMode = m.faderMode;
+        if ('faderLo' in m) this.faderLo = m.faderLo;
+        if ('faderHi' in m) this.faderHi = m.faderHi;
+        if ('gate' in m) d.gate = m.gate;
+        if ('flip' in m) d.flip = m.flip;
+        if ('calib' in m) d.calib = m.calib;
+        if ('refLevel' in m) this.refLevel = m.refLevel;
+        if ('outGain' in m) e.outGain = m.outGain;
+        if ('sim' in m) this.sim.on = m.sim;
+        if ('loopSec' in m) e.loopLen = Math.min(Math.round(m.loopSec * sampleRate), e.len - 8);
+        break;
+      case 'freeze': e.setFrozen(m.on, m.loopSec); break;
+      case 'jump': e.jumpToLive(); break;
+      case 'softCut': this.softCut = m.on ? 0 : 1; break;
+      case 'simHand': this.sim.hand = m.down; this.sim.handV = m.v; break;
+      case 'simMotor': this.sim.motor = m.on; break;
+      case 'simFader': this.sim.fader = m.v; break;
+      case 'calibrate':
+        this.cal = { n: 0, N: Math.round(1.5 * sampleRate), speeds: [], stat: 0, statN: 0, env: 0, envN: 0, active: 0 };
+        break;
+    }
+  }
+
+  rnd() { // tiny LCG for sim noise
+    this.sim.seed = (this.sim.seed * 1664525 + 1013904223) >>> 0;
+    return this.sim.seed / 4294967296 - 0.5;
+  }
+
+  process(inputs, outputs) {
+    const ctrlIn = inputs[0] && inputs[0][0];
+    const live = inputs[1];
+    const liveL = live && live[0];
+    const liveR = live && (live[1] || live[0]);
+    const out = outputs[0];
+    const oL = out[0], oR = out[1] || out[0];
+    const N = oL.length;
+    const d = this.dec, e = this.eng, sim = this.sim, tmp = this.tmp, sr = sampleRate;
+    const handK = 1 - Math.exp(-1 / (0.002 * sr));
+    const motorK = 1 - Math.exp(-1 / (0.09 * sr));
+
+    for (let i = 0; i < N; i++) {
+      let c = ctrlIn ? ctrlIn[i] : 0;
+      if (sim.on) {
+        const target = sim.hand ? sim.handV : (sim.motor ? 1 : 0);
+        sim.v += (target - sim.v) * (sim.hand ? handK : motorK);
+        sim.theta += 2 * Math.PI * F0 * sim.v / sr;
+        if (sim.theta > 1e6) sim.theta -= 2 * Math.PI * Math.floor(sim.theta / (2 * Math.PI));
+        c = 0.445 * sim.fader * toneSample(sim.theta) + this.rnd() * 2e-4;
+      }
+      const r = d.process(c);
+
+      let g = 1;
+      if (this.faderMode === 'wow') g = faderCurve(d.env / Math.max(1e-4, this.refLevel), this.faderLo, this.faderHi);
+      g *= this.softCut;
+
+      const lL = liveL ? liveL[i] : 0, lR = liveR ? liveR[i] : 0;
+      e.step(lL, lR, r, g, tmp);
+      oL[i] = tmp[0]; if (oR !== oL) oR[i] = tmp[1];
+
+      const ac = Math.abs(c); if (ac > this.ctrlPk) this.ctrlPk = ac;
+      const al = Math.max(Math.abs(lL), Math.abs(lR)); if (al > this.livePk) this.livePk = al;
+      const ao = Math.abs(tmp[0]); if (ao > this.outPk) this.outPk = ao;
+
+      if (!e.frozen) {
+        if (al > this.binAcc) this.binAcc = al;
+        if (++this.binN >= this.binSize) { this.newBins.push(this.binAcc); this.binAcc = 0; this.binN = 0; }
+      }
+
+      const cal = this.cal;
+      if (cal) {
+        cal.n++;
+        if (d.active) cal.active++;
+        if ((cal.n & 31) === 0 && d.active && d.rawSpeed > 0) cal.speeds.push(d.rawSpeed);
+        if ((cal.n & 31) === 0 && d.active) { cal.stat += d.lastStat; cal.statN++; cal.env += d.env; cal.envN++; }
+        if (cal.n >= cal.N) {
+          const s = cal.speeds.sort((a, b) => a - b);
+          const med = s.length ? s[Math.floor(s.length / 2)] : 0;
+          const lo = s.length ? s[Math.floor(s.length * 0.1)] : 0, hi = s.length ? s[Math.floor(s.length * 0.9)] : 0;
+          this.port.postMessage({
+            type: 'calibrated', speed: med, spread: med ? (hi - lo) / med : 1,
+            stat: cal.statN ? cal.stat / cal.statN : 0, env: cal.envN ? cal.env / cal.envN : 0,
+            activeFrac: cal.active / cal.n,
+          });
+          this.cal = null;
+        }
+      }
+    }
+
+    this.since += N;
+    if (this.since >= this.reportEvery) {
+      this.since = 0;
+      const bins = this.newBins.length ? Float32Array.from(this.newBins) : null;
+      this.newBins.length = 0;
+      this.port.postMessage({
+        type: 'state', v: e.vs, rate: e.rate, lag: e.lag, locked: e.locked, frozen: e.frozen,
+        env: d.env, active: d.active, dir: d.dir, stat: d.lastStat, pos: d.posInt,
+        gain: e.gain, ctrlPk: this.ctrlPk, livePk: this.livePk, outPk: this.outPk,
+        simV: sim.v, loopLen: e.loopLen, bins,
+      }, bins ? [bins.buffer] : []);
+      this.ctrlPk = 0; this.livePk = 0; this.outPk = 0;
+    }
+    return true;
+  }
+}
+registerProcessor('flutter', FlutterProcessor);
+</script>
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('scratcher.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('scratcher.' + k, JSON.stringify(v)); } catch (e) {} },
+};
+
+const S = {
+  ctrlDev: store.get('ctrlDev', 'sim'), ctrlCh: store.get('ctrlCh', 'L'),
+  liveDev: store.get('liveDev', 'test'), liveCh: store.get('liveCh', 'S'),
+  outDev: store.get('outDev', ''),
+  smooth: store.get('smooth', 2), mode: store.get('mode', 'snap'), snapDelay: store.get('snapDelay', 180),
+  lock: store.get('lock', true), faderMode: store.get('faderMode', 'wow'),
+  faderLo: store.get('faderLo', 0.08), faderHi: store.get('faderHi', 0.45), gate: store.get('gate', -56),
+  flip: store.get('flip', false), calib: store.get('calib', 1), refLevel: store.get('refLevel', 0.3),
+  calInfo: store.get('calInfo', null), outGain: store.get('outGain', 1), loopSec: store.get('loopSec', 4),
+};
+const save = (k) => store.set(k, S[k]);
+
+let ctx, node, ctrlBus, liveMerger, master;
+const streams = new Map();      // deviceId -> MediaStream
+let ctrlSrcNodes = [], liveSrcNodes = [];
+let testBuffer = null, fileBuffer = null;
+let st = { v: 0, lag: 0, pos: 0, gain: 0, locked: false, frozen: false, active: false, dir: 1, env: 0, ctrlPk: 0, livePk: 0, outPk: 0, loopLen: 0 };
+let F0 = 1500;
+
+// ---------- audio graph ----------
+async function start() {
+  ctx = new AudioContext({ latencyHint: 0 });
+  const src = $('dsp-src').textContent;
+  // data: URL works from file:// as well as http(s); blob: is the fallback
+  try {
+    await ctx.audioWorklet.addModule('data:text/javascript;base64,' + btoa(unescape(encodeURIComponent(src))));
+  } catch (e) {
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'application/javascript' })));
+  }
+  node = new AudioWorkletNode(ctx, 'flutter', {
+    numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [2],
+    channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers',
+  });
+  ctrlBus = new GainNode(ctx, { channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
+  liveMerger = new ChannelMergerNode(ctx, { numberOfInputs: 2 });
+  master = new GainNode(ctx, { gain: 1 });
+  ctrlBus.connect(node, 0, 0);
+  liveMerger.connect(node, 0, 1);
+  node.connect(master).connect(ctx.destination);
+  node.port.onmessage = (e) => onMsg(e.data);
+  sendAllParams();
+
+  // ask once so device labels show up
+  try { const s = await navigator.mediaDevices.getUserMedia({ audio: rawConstraints() }); s.getTracks().forEach(t => t.stop()); }
+  catch (err) { $('routeErr').textContent = 'Microphone permission denied — only test mode will work.'; }
+  await refreshDevices();
+  navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
+  testBuffer = await renderTestLoop(ctx.sampleRate);
+  await applyRouting();
+  if (S.outDev) setOutput(S.outDev);
+  showLatency();
+  requestAnimationFrame(draw);
+}
+
+function rawConstraints(deviceId) {
+  const a = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 }, latency: 0 };
+  if (deviceId) a.deviceId = { exact: deviceId };
+  return a;
+}
+
+async function getStream(id) {
+  if (streams.has(id)) return streams.get(id);
+  const s = await navigator.mediaDevices.getUserMedia({ audio: rawConstraints(id) });
+  streams.set(id, s);
+  return s;
+}
+
+function releaseUnusedStreams() {
+  for (const [id, s] of streams) {
+    if (id !== S.ctrlDev && id !== S.liveDev) { s.getTracks().forEach(t => t.stop()); streams.delete(id); }
+  }
+}
+
+function pick(srcNode, ch, toNode, toInputs) {
+  // srcNode -> upmix(2) -> splitter -> chosen channel(s) -> toNode inputs
+  const up = new GainNode(ctx, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
+  const sp = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
+  srcNode.connect(up).connect(sp);
+  const nodes = [up, sp];
+  const link = (from, to, gain) => {
+    const g = new GainNode(ctx, { gain }); sp.connect(g, from); g.connect(toNode, 0, to); nodes.push(g);
+  };
+  if (toInputs.length === 1) {
+    if (ch === 'L') link(0, toInputs[0], 1);
+    else if (ch === 'R') link(1, toInputs[0], 1);
+    else { link(0, toInputs[0], 0.5); link(1, toInputs[0], 0.5); }
+  } else {
+    if (ch === 'S') { link(0, toInputs[0], 1); link(1, toInputs[1], 1); }
+    else if (ch === 'L') { link(0, toInputs[0], 1); link(0, toInputs[1], 1); }
+    else if (ch === 'R') { link(1, toInputs[0], 1); link(1, toInputs[1], 1); }
+    else { for (const t of toInputs) { link(0, t, 0.5); link(1, t, 0.5); } }
+  }
+  return nodes;
+}
+
+function disconnectAll(list) { for (const n of list) { try { n.disconnect(); } catch (e) {} try { n.stop && n.stop(); } catch (e) {} } }
+
+async function applyRouting() {
+  $('routeErr').textContent = '';
+  disconnectAll(ctrlSrcNodes); disconnectAll(liveSrcNodes);
+  ctrlSrcNodes = []; liveSrcNodes = [];
+  const sim = S.ctrlDev === 'sim';
+  node.port.postMessage({ type: 'params', sim });
+  $('simCard').style.display = sim ? '' : 'none';
+  try {
+    if (!sim) {
+      const s = await getStream(S.ctrlDev);
+      const src = new MediaStreamAudioSourceNode(ctx, { mediaStream: s });
+      ctrlSrcNodes = [src, ...pick(src, S.ctrlCh, ctrlBus, [0])];
+    }
+  } catch (err) { $('routeErr').textContent = 'Control input: ' + err.message; }
+  try {
+    $('liveFileRow').style.display = S.liveDev === 'file' ? '' : 'none';
+    let src = null;
+    if (S.liveDev === 'test' || S.liveDev === 'file') {
+      const buf = S.liveDev === 'test' ? testBuffer : fileBuffer;
+      if (buf) { src = new AudioBufferSourceNode(ctx, { buffer: buf, loop: true }); src.start(); }
+    } else if (S.liveDev) {
+      const s = await getStream(S.liveDev);
+      src = new MediaStreamAudioSourceNode(ctx, { mediaStream: s });
+    }
+    if (src) liveSrcNodes = [src, ...pick(src, S.liveCh, liveMerger, [0, 1])];
+  } catch (err) { $('routeErr').textContent = 'Live input: ' + err.message; }
+  releaseUnusedStreams();
+}
+
+async function refreshDevices() {
+  const devs = await navigator.mediaDevices.enumerateDevices();
+  const ins = devs.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
+  const outs = devs.filter(d => d.kind === 'audiooutput' && d.deviceId !== 'communications');
+  const fill = (sel, opts, val) => {
+    sel.innerHTML = '';
+    for (const [v, t] of opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); }
+    if (opts.some(o => o[0] === val)) sel.value = val;
+  };
+  const inOpts = ins.map((d, i) => [d.deviceId, d.label || ('Input ' + (i + 1))]);
+  fill($('ctrlDev'), [['sim', '◎ Virtual platter (test)'], ...inOpts], S.ctrlDev);
+  fill($('liveDev'), [['test', '♫ Built-in test loop'], ['file', '📂 Audio file…'], ...inOpts], S.liveDev);
+  if ('setSinkId' in AudioContext.prototype) {
+    fill($('outDev'), outs.map((d, i) => [d.deviceId === 'default' ? '' : d.deviceId, d.label || ('Output ' + (i + 1))]), S.outDev);
+  } else $('outRow').style.display = 'none';
+  S.ctrlDev = $('ctrlDev').value; S.liveDev = $('liveDev').value;
+}
+
+async function setOutput(id) {
+  try { await ctx.setSinkId(id); showLatency(); } catch (err) { $('routeErr').textContent = 'Output: ' + err.message; }
+}
+
+function showLatency() {
+  const ms = ((ctx.baseLatency || 0) + (ctx.outputLatency || 0)) * 1000;
+  $('latency').textContent = `${ctx.sampleRate / 1000} kHz · output ≈ ${ms.toFixed(1)} ms`;
+}
+
+function sendAllParams() {
+  node.port.postMessage({
+    type: 'params', smoothMs: S.smooth, mode: S.mode, snapDelay: S.snapDelay, lock: S.lock,
+    faderMode: S.faderMode, faderLo: S.faderLo, faderHi: S.faderHi, gate: Math.pow(10, S.gate / 20),
+    flip: S.flip, calib: S.calib, refLevel: S.refLevel, outGain: S.outGain, loopSec: S.loopSec,
+  });
+}
+const param = (o) => node && node.port.postMessage(Object.assign({ type: 'params' }, o));
+
+// ---------- messages ----------
+const BIN_COUNT = 1900; // ~10 s at 48k / 256
+const bins = new Float32Array(BIN_COUNT); let binHead = 0;
+function onMsg(m) {
+  if (m.type === 'state') {
+    st = m;
+    if (m.bins) for (let i = 0; i < m.bins.length; i++) { bins[binHead] = m.bins[i]; binHead = (binHead + 1) % BIN_COUNT; }
+  } else if (m.type === 'calibrated') {
+    const el = $('calRes');
+    if (m.activeFrac < 0.9 || m.speed <= 0) { el.textContent = 'No steady control tone — check routing, balance knob, and that the tone is playing.'; el.className = 'calres bad'; return; }
+    if (m.spread > 0.12) { el.textContent = `Speed unsteady (±${(m.spread * 50).toFixed(0)}%) — hands off the platter and try again.`; el.className = 'calres bad'; return; }
+    S.calib = m.speed; S.refLevel = m.env;
+    if (m.stat < 0) { S.flip = !S.flip; }
+    S.calInfo = { speed: m.speed, level: m.env, when: Date.now() };
+    ['calib', 'refLevel', 'flip', 'calInfo'].forEach(save);
+    syncButtons(); sendAllParams(); showCal();
+  }
+}
+function showCal() {
+  const el = $('calRes'), c = S.calInfo;
+  if (!c) { el.textContent = 'not calibrated — using nominal 1×'; el.className = 'calres'; return; }
+  const db = 20 * Math.log10(Math.max(1e-6, c.level));
+  el.textContent = `1× = ${c.speed.toFixed(4)} of nominal · level ${db.toFixed(1)} dBFS${S.flip ? ' · flipped' : ''}`;
+  el.className = 'calres good';
+}
+
+// ---------- drawing ----------
+const pc = $('platter'), pctx = pc.getContext('2d');
+const RPM = 100 / 3, SPS = 48000;
+let dispAngle = 0;
+function drawPlatter() {
+  const W = pc.width, R = W / 2;
+  const sr = ctx ? ctx.sampleRate : SPS;
+  // rotation follows the *decoded* record position (or the hand in sim mode)
+  const ang = (st.pos / sr) * (RPM / 60) * 2 * Math.PI;
+  dispAngle = ang;
+  pctx.clearRect(0, 0, W, W);
+  pctx.save(); pctx.translate(R, R);
+  // mat
+  pctx.fillStyle = '#0a0a0a'; pctx.beginPath(); pctx.arc(0, 0, R - 2, 0, Math.PI * 2); pctx.fill();
+  pctx.rotate(ang);
+  // grooves
+  for (let r = R - 14; r > R * 0.36; r -= 3.2) {
+    pctx.strokeStyle = (Math.floor(r) % 7 === 0) ? '#222' : '#161616';
+    pctx.lineWidth = 1.2; pctx.beginPath(); pctx.arc(0, 0, r, 0, Math.PI * 2); pctx.stroke();
+  }
+  // sheen
+  const g = pctx.createLinearGradient(-R, -R, R, R);
+  g.addColorStop(0.35, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,0.05)'); g.addColorStop(0.65, 'rgba(255,255,255,0)');
+  pctx.fillStyle = g; pctx.beginPath(); pctx.arc(0, 0, R - 12, 0, Math.PI * 2); pctx.fill();
+  // label
+  pctx.fillStyle = st.locked ? '#ff5a1f' : '#e9e5dc';
+  pctx.beginPath(); pctx.arc(0, 0, R * 0.34, 0, Math.PI * 2); pctx.fill();
+  pctx.fillStyle = '#111'; pctx.font = `800 ${W * 0.042}px ui-monospace, Menlo, monospace`; pctx.textAlign = 'center';
+  pctx.fillText('SCRATCHER', 0, -W * 0.03);
+  pctx.font = `600 ${W * 0.025}px ui-monospace, Menlo, monospace`;
+  pctx.fillText('LIVE · 33⅓', 0, W * 0.035);
+  // cue marker
+  pctx.fillStyle = '#111'; pctx.fillRect(-W * 0.006, -R * 0.33, W * 0.012, R * 0.12);
+  pctx.fillStyle = '#ff5a1f'; pctx.fillRect(-W * 0.008, -R + 10, W * 0.016, R * 0.2);
+  pctx.fillStyle = '#000'; pctx.beginPath(); pctx.arc(0, 0, W * 0.012, 0, Math.PI * 2); pctx.fill();
+  pctx.restore();
+  // strobe dots (outer ring) — still at exactly 1×
+  pctx.save(); pctx.translate(R, R); pctx.rotate(ang);
+  for (let i = 0; i < 72; i++) {
+    pctx.fillStyle = st.locked ? '#ff5a1f' : '#3a3a3a';
+    pctx.beginPath(); const a = i / 72 * Math.PI * 2; pctx.arc(Math.cos(a) * (R - 6), Math.sin(a) * (R - 6), 2.2, 0, Math.PI * 2); pctx.fill();
+  }
+  pctx.restore();
+}
+
+const sm = $('speedMeter'), smx = sm.getContext('2d');
+function drawSpeedMeter() {
+  const W = sm.width, H = sm.height, max = 3;
+  smx.clearRect(0, 0, W, H);
+  const x = (v) => W / 2 + (Math.max(-max, Math.min(max, v)) / max) * (W / 2 - 4);
+  smx.fillStyle = '#1c1c1c'; for (let k = -max; k <= max; k++) smx.fillRect(x(k) - 1, 0, 2, H);
+  smx.fillStyle = '#2f4a62'; smx.fillRect(x(1) - 2, 0, 4, H);
+  const v = st.rate || 0;
+  smx.fillStyle = v >= 0 ? '#59d38c' : '#ff5a1f';
+  smx.fillRect(Math.min(x(0), x(v)), H * 0.3, Math.abs(x(v) - x(0)), H * 0.4);
+  smx.fillStyle = '#8b867c'; smx.font = '20px ui-monospace, Menlo, monospace'; smx.textAlign = 'center';
+  smx.fillText('-3', x(-3) + 14, H - 6); smx.fillText('0', x(0) + 12, H - 6); smx.fillText('1×', x(1) + 16, H - 6); smx.fillText('3', x(3) - 12, H - 6);
+}
+
+const sc = $('strip'), scx = sc.getContext('2d');
+function drawStrip() {
+  const W = sc.width, H = sc.height, sr = ctx ? ctx.sampleRate : SPS;
+  scx.clearRect(0, 0, W, H);
+  const secPerBin = 256 / sr, total = BIN_COUNT * secPerBin;
+  // frozen loop region
+  if (st.frozen) {
+    const lw = (st.loopLen / sr) / total * W;
+    scx.fillStyle = 'rgba(243,201,77,0.10)'; scx.fillRect(W - lw, 0, lw, H);
+  }
+  scx.fillStyle = st.frozen ? '#8a7a40' : '#5b5750';
+  for (let i = 0; i < BIN_COUNT; i++) {
+    const v = bins[(binHead + i) % BIN_COUNT];
+    const h = Math.min(1, Math.sqrt(v)) * (H / 2 - 4);
+    const px = i / BIN_COUNT * W;
+    scx.fillRect(px, H / 2 - h, Math.max(1, W / BIN_COUNT), h * 2);
+  }
+  // seconds ticks
+  scx.fillStyle = '#2a2a2a';
+  for (let s = 1; s < total; s++) scx.fillRect(W - s / total * W, 0, 1, 10);
+  // needle
+  const lagS = st.lag / sr;
+  const nx = W - Math.min(lagS, total) / total * W;
+  scx.fillStyle = '#ff5a1f'; scx.fillRect(nx - 2, 0, 4, H);
+  scx.fillStyle = '#e9e5dc'; scx.fillRect(W - 2, 0, 2, H);
+}
+
+function setBar(el, pk) { const db = 20 * Math.log10(Math.max(1e-5, pk)); el.style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%'; el.style.background = pk > 0.95 ? '#ff5a1f' : '#59d38c'; }
+
+function draw() {
+  drawPlatter(); drawSpeedMeter(); drawStrip();
+  const sr = ctx ? ctx.sampleRate : SPS;
+  const sp = Math.abs(st.rate || 0) < 0.005 ? 0 : st.rate;
+  $('roSpeed').innerHTML = `${sp.toFixed(2)}<small>×</small>`;
+  $('lagKey').textContent = st.frozen ? 'LOOP POSITION' : 'BEHIND LIVE';
+  const lagMs = Math.max(0, st.lag / sr * 1000 - 2.5);
+  $('roLag').innerHTML = lagMs < 1 ? `0<small>ms</small>` : lagMs < 1000 ? `${lagMs.toFixed(0)}<small>ms</small>` : `${(lagMs / 1000).toFixed(2)}<small>s</small>`;
+  $('roDir').textContent = !st.active ? '·' : (st.dir > 0 ? '→' : '←');
+  $('roFader').innerHTML = `${Math.round((st.gain || 0) * 100)}<small>%</small>`;
+  $('chSig').classList.toggle('lit', !!st.active);
+  $('chLock').classList.toggle('lit', !!st.locked);
+  $('chLive').classList.toggle('lit', !st.frozen && lagMs < 1);
+  $('chFrz').classList.toggle('lit', !!st.frozen);
+  $('freezeBtn').classList.toggle('on', !!st.frozen);
+  setBar($('mCtrl'), st.ctrlPk); setBar($('mLive'), st.livePk); setBar($('mOut'), st.outPk);
+  requestAnimationFrame(draw);
+}
+
+// ---------- virtual platter interaction ----------
+let drag = null;
+function pointerAngle(e) { const r = pc.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)); }
+pc.addEventListener('pointerdown', (e) => {
+  if (S.ctrlDev !== 'sim' || !node) return;
+  pc.setPointerCapture(e.pointerId); pc.classList.add('dragging');
+  drag = { a: pointerAngle(e), t: performance.now(), v: 0 };
+  node.port.postMessage({ type: 'simHand', down: true, v: 0 });
+});
+pc.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const a = pointerAngle(e), t = performance.now();
+  let da = a - drag.a; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
+  const dt = Math.max(1, t - drag.t) / 1000;
+  const v = (da / dt) / ((RPM / 60) * 2 * Math.PI);
+  drag.v = drag.v * 0.4 + v * 0.6; drag.a = a; drag.t = t;
+  node.port.postMessage({ type: 'simHand', down: true, v: Math.max(-12, Math.min(12, drag.v)) });
+});
+// pointer stops moving but still held → platter held still
+setInterval(() => { if (drag && performance.now() - drag.t > 40) { drag.v *= 0.3; node.port.postMessage({ type: 'simHand', down: true, v: drag.v }); } }, 30);
+const endDrag = () => { if (!drag) return; drag = null; pc.classList.remove('dragging'); node.port.postMessage({ type: 'simHand', down: false, v: 0 }); };
+pc.addEventListener('pointerup', endDrag); pc.addEventListener('pointercancel', endDrag);
+
+// ---------- controls ----------
+function seg(id, key, onChange) {
+  const el = $(id);
+  const sync = () => el.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === S[key]));
+  el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S[key] = b.dataset.v; save(key); sync(); onChange && onChange(); });
+  sync();
+}
+function slider(id, key, fmt, onChange) {
+  const el = $(id), out = $(id + 'Out');
+  el.value = S[key]; if (out) out.textContent = fmt(S[key]);
+  el.addEventListener('input', () => { S[key] = parseFloat(el.value); save(key); if (out) out.textContent = fmt(S[key]); onChange && onChange(S[key]); });
+}
+function syncButtons() {
+  $('flipBtn').textContent = S.flip ? 'on' : 'off'; $('flipBtn').classList.toggle('on', S.flip);
+  $('lockBtn').textContent = S.lock ? 'on' : 'off'; $('lockBtn').classList.toggle('on', S.lock);
+}
+
+seg('ctrlCh', 'ctrlCh', () => node && applyRouting());
+seg('liveCh', 'liveCh', () => node && applyRouting());
+seg('mode', 'mode', () => param({ mode: S.mode }));
+seg('faderMode', 'faderMode', () => param({ faderMode: S.faderMode }));
+slider('smooth', 'smooth', v => v.toFixed(1) + ' ms', v => param({ smoothMs: v }));
+slider('snapDelay', 'snapDelay', v => v + ' ms', v => param({ snapDelay: v }));
+slider('faderLo', 'faderLo', v => Math.round(v * 100) + '%', v => param({ faderLo: v }));
+slider('faderHi', 'faderHi', v => Math.round(v * 100) + '%', v => param({ faderHi: v }));
+slider('gate', 'gate', v => v + ' dB', v => param({ gate: Math.pow(10, v / 20) }));
+slider('outGain', 'outGain', v => Math.round(v * 100) + '%', v => param({ outGain: v }));
+slider('loopSec', 'loopSec', v => v.toFixed(1) + ' s', v => param({ loopSec: v }));
+$('ctrlDev').addEventListener('change', (e) => { S.ctrlDev = e.target.value; save('ctrlDev'); applyRouting(); });
+$('liveDev').addEventListener('change', (e) => { S.liveDev = e.target.value; save('liveDev'); applyRouting(); });
+$('outDev').addEventListener('change', (e) => { S.outDev = e.target.value; save('outDev'); setOutput(S.outDev); });
+$('liveFile').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try { fileBuffer = await ctx.decodeAudioData(await f.arrayBuffer()); applyRouting(); }
+  catch (err) { $('routeErr').textContent = 'Could not decode that file.'; }
+});
+$('flipBtn').addEventListener('click', () => { S.flip = !S.flip; save('flip'); syncButtons(); param({ flip: S.flip }); showCal(); });
+$('lockBtn').addEventListener('click', () => { S.lock = !S.lock; save('lock'); syncButtons(); param({ lock: S.lock }); });
+$('calBtn').addEventListener('click', () => {
+  if (!node) return;
+  $('calRes').textContent = 'listening for 1.5 s… hands off'; $('calRes').className = 'calres';
+  // measure against nominal: reset calibration first
+  node.port.postMessage({ type: 'params', calib: 1, flip: false });
+  S.flip = false;
+  setTimeout(() => node.port.postMessage({ type: 'calibrate' }), 150);
+});
+$('jumpBtn').addEventListener('click', () => node && node.port.postMessage({ type: 'jump' }));
+$('freezeBtn').addEventListener('click', () => toggleFreeze());
+function toggleFreeze() { if (!node) return; node.port.postMessage({ type: 'freeze', on: !st.frozen, loopSec: S.loopSec }); }
+$('simMotor').addEventListener('click', (e) => {
+  const on = !e.target.classList.contains('on'); e.target.classList.toggle('on', on); e.target.textContent = on ? 'Motor on' : 'Motor off';
+  node && node.port.postMessage({ type: 'simMotor', on });
+});
+$('simFader').addEventListener('input', (e) => node && node.port.postMessage({ type: 'simFader', v: parseFloat(e.target.value) }));
+
+window.addEventListener('keydown', (e) => {
+  if (!node || e.repeat || e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); node.port.postMessage({ type: 'jump' }); }
+  else if (e.code === 'KeyF') toggleFreeze();
+  else if (e.code === 'KeyC') node.port.postMessage({ type: 'softCut', on: true });
+});
+window.addEventListener('keyup', (e) => { if (node && e.code === 'KeyC') node.port.postMessage({ type: 'softCut', on: false }); });
+
+// ---------- control tone WAV ----------
+$('toneBtn').addEventListener('click', () => {
+  const secs = parseInt($('toneLen').value, 10), sr = 44100, n = sr * secs;
+  const bytes = 44 + n * 4; const buf = new ArrayBuffer(bytes); const dv = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); dv.setUint32(4, bytes - 8, true); w(8, 'WAVE'); w(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 2, true); dv.setUint32(24, sr, true);
+  dv.setUint32(28, sr * 4, true); dv.setUint16(32, 4, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 4, true);
+  // one cycle at 44.1k is 29.4 samples; 1500 Hz × integer seconds = integer cycles → seamless loop
+  const per = new Int16Array(441 * 2); // 441 samples = 15 exact cycles
+  for (let i = 0; i < 441; i++) {
+    const th = 2 * Math.PI * 1500 * i / sr;
+    const s = (Math.cos(th) + 0.3 * Math.cos(3 * th + Math.PI / 2)) / 1.25 * 0.89;
+    per[i] = Math.round(s * 32767);
+  }
+  const out = new Int16Array(buf, 44);
+  for (let i = 0; i < n; i++) { const v = per[i % 441]; out[2 * i] = v; out[2 * i + 1] = v; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  a.download = `scratcher-control-tone-${secs / 60}min.wav`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+});
+
+// ---------- built-in test loop (boom-bap + an "ahh" stab) ----------
+async function renderTestLoop(sr) {
+  const bpm = 92, beat = 60 / bpm, bars = 2, len = beat * 4 * bars;
+  const oc = new OfflineAudioContext(2, Math.ceil(len * sr), sr);
+  const noise = oc.createBuffer(1, sr, sr); const nd = noise.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  const bus = oc.createGain(); bus.gain.value = 0.8; bus.connect(oc.destination);
+  const kick = (t) => {
+    const o = oc.createOscillator(), g = oc.createGain();
+    o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+    g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+    o.connect(g).connect(bus); o.start(t); o.stop(t + 0.4);
+  };
+  const snare = (t) => {
+    const n = oc.createBufferSource(); n.buffer = noise;
+    const hp = oc.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 2200; hp.Q.value = 0.6;
+    const g = oc.createGain(); g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    n.connect(hp).connect(g).connect(bus); n.start(t); n.stop(t + 0.25);
+    const o = oc.createOscillator(), og = oc.createGain(); o.type = 'triangle'; o.frequency.value = 185;
+    og.gain.setValueAtTime(0.5, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    o.connect(og).connect(bus); o.start(t); o.stop(t + 0.12);
+  };
+  const hat = (t, a) => {
+    const n = oc.createBufferSource(); n.buffer = noise;
+    const hp = oc.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7500;
+    const g = oc.createGain(); g.gain.setValueAtTime(a, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    n.connect(hp).connect(g).connect(bus); n.start(t); n.stop(t + 0.06);
+  };
+  const ahh = (t, dur, root) => {
+    const f1 = oc.createBiquadFilter(), f2 = oc.createBiquadFilter(), mix = oc.createGain();
+    f1.type = 'bandpass'; f1.frequency.value = 780; f1.Q.value = 6;
+    f2.type = 'bandpass'; f2.frequency.value = 1180; f2.Q.value = 7;
+    const g = oc.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1.6, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    for (const ratio of [1, 1.189, 1.498]) {
+      const o = oc.createOscillator(); o.type = 'sawtooth'; o.frequency.value = root * ratio;
+      o.frequency.setValueAtTime(root * ratio * 1.03, t); o.frequency.exponentialRampToValueAtTime(root * ratio, t + 0.08);
+      o.connect(f1); o.connect(f2); o.start(t); o.stop(t + dur + 0.05);
+    }
+    f1.connect(mix); f2.connect(mix); mix.connect(g).connect(bus);
+  };
+  for (let b = 0; b < bars; b++) {
+    const t0 = b * beat * 4;
+    [0, 0.75, 2.5].forEach(k => kick(t0 + k * beat));
+    if (b === 1) kick(t0 + 3.25 * beat);
+    [1, 3].forEach(k => snare(t0 + k * beat));
+    for (let h = 0; h < 8; h++) hat(t0 + h * beat / 2, h % 2 ? 0.18 : 0.32);
+  }
+  ahh(0, 0.55, 220); ahh(beat * 6.5, 0.4, 196);
+  return oc.startRendering();
+}
+
+// ---------- boot ----------
+syncButtons(); showCal();
+$('startBtn').addEventListener('click', async () => {
+  $('startBtn').disabled = true;
+  try {
+    if (!window.AudioWorkletNode) throw new Error('This browser has no AudioWorklet — use Chrome.');
+    await start();
+    $('gate-overlay').remove();
+  } catch (err) {
+    $('startErr').textContent = err.message || String(err);
+    $('startBtn').disabled = false;
+  }
+});
+})();
+</script>
+</body>
+</html>
