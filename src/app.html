@@ -159,7 +159,7 @@
         <summary>WOW setup</summary>
         <ol>
           <li>Download the <b>control tone</b> (right panel) and load it onto the WOW as a <b>sample</b>, the same way you load any scratch sample.</li>
-          <li>Turn the WOW's beat/sample <b>balance fully to sample</b>, so the looped beats don't mix into the control signal.</li>
+          <li><b>Pilot-fader mode (recommended):</b> put the pilot WAV in the WOW's <b>beats</b> folder, set <code>fader_left = beat</code> and <code>fader_right = beat</code> in settings.txt, center the mix knob, keep delay/reverb off. <b>Tone-level mode:</b> balance fully to sample instead.</li>
           <li>WOW output → an input on your interface. Live audio (synth, mic, OP-1, anything) → another input. Pick both above.</li>
           <li>Motor on, hands off, fader open → press <b>Calibrate</b>. It measures 1× speed and the WOW's output level, so the WOW crossfader becomes Scratcher's fader.</li>
           <li>Scratch. Hands off and the needle rides at live. Pull back and you're scratching the last few seconds; let go and it snaps back to live, unless Return is set to <b>Stay</b>.</li>
@@ -220,6 +220,10 @@
       <div class="row"><label>Curve</label><input type="range" id="vfWidth" class="grow" min="0.005" max="0.4" step="0.005" value="0.02"><output id="vfWidthOut">sharp</output></div>
       <div class="row"><label>Hamster</label><button id="hamBtn">off</button></div>
       <h2 style="margin-top:14px">WOW fader</h2>
+      <div class="row"><label>Read it from</label>
+        <div class="seg" id="wowRead"><button data-v="pilot">Pilot tone</button><button data-v="level">Tone level</button></div>
+      </div>
+      <p class="note" id="wowReadNote"></p>
       <div class="row"><label>Cut point</label><input type="range" id="faderLo" class="grow" min="0.01" max="0.5" step="0.01" value="0.08"><output id="faderLoOut">8%</output></div>
       <div class="row"><label>Full open</label><input type="range" id="faderHi" class="grow" min="0.1" max="1" step="0.01" value="0.45"><output id="faderHiOut">45%</output></div>
       <div class="row"><label>Noise gate</label><input type="range" id="gate" class="grow" min="-80" max="-30" step="1" value="-56"><output id="gateOut">-56 dB</output></div>
@@ -232,6 +236,8 @@
         <select id="toneLen"><option value="15">15 s</option><option value="29" selected>29 s</option></select>
         <button id="toneBtn">Download WAV</button>
       </div>
+      <p class="note">Pilot tone (for <b>beats</b> folder, pilot-fader mode): 18 kHz · 48 kHz · 60 s loop.</p>
+      <div class="row"><button id="pilotBtn">Download pilot WAV</button></div>
     </div>
   </aside>
 </main>
@@ -251,7 +257,7 @@ const S = {
   liveDev: store.get('liveDev', 'test'), liveCh: store.get('liveCh', 'S'),
   outDev: store.get('outDev', ''),
   smooth: store.get('smooth', 2), mode: store.get('mode', 'snap'), snapDelay: store.get('snapDelay', 180),
-  lock: store.get('lock', true), faderMode: store.get('faderMode2', 'both'), vfCut: store.get('vfCut', 0.05), vfWidth: store.get('vfWidth', 0.02), hamster: store.get('hamster', false), vfX: 0,
+  lock: store.get('lock', true), faderMode: store.get('faderMode2', 'both'), wowRead: store.get('wowRead', 'level'), pilotHz: store.get('pilotHz', 18000), pilotRef: store.get('pilotRef', 0.3), vfCut: store.get('vfCut', 0.05), vfWidth: store.get('vfWidth', 0.02), hamster: store.get('hamster', false), vfX: 0,
   faderLo: store.get('faderLo', 0.08), faderHi: store.get('faderHi', 0.45), gate: store.get('gate', -56),
   flip: store.get('flip', false), calib: store.get('calib', 1), refLevel: store.get('refLevel', 0.3),
   calInfo: store.get('calInfo', null), outGain: store.get('outGain', 1), loopSec: store.get('loopSec', 4),
@@ -402,7 +408,7 @@ function showLatency() {
 function sendAllParams() {
   node.port.postMessage({
     type: 'params', smoothMs: S.smooth, mode: S.mode, snapDelay: S.snapDelay, lock: S.lock,
-    faderMode: S.faderMode, vfX: S.vfX, vfCut: S.vfCut, vfWidth: S.vfWidth, hamster: S.hamster, faderLo: S.faderLo, faderHi: S.faderHi, gate: Math.pow(10, S.gate / 20),
+    faderMode: S.faderMode, wowRead: S.wowRead, pilotHz: S.pilotHz, pilotRef: S.pilotRef, vfX: S.vfX, vfCut: S.vfCut, vfWidth: S.vfWidth, hamster: S.hamster, faderLo: S.faderLo, faderHi: S.faderHi, gate: Math.pow(10, S.gate / 20),
     flip: S.flip, calib: S.calib, refLevel: S.refLevel, outGain: S.outGain, loopSec: S.loopSec,
   });
 }
@@ -420,6 +426,12 @@ function onMsg(m) {
     if (m.activeFrac < 0.9 || m.speed <= 0) { el.textContent = 'No steady control tone — check routing, balance knob, and that the tone is playing.'; el.className = 'calres bad'; return; }
     if (m.spread > 0.12) { el.textContent = `Speed unsteady (±${(m.spread * 50).toFixed(0)}%) — hands off the platter and try again.`; el.className = 'calres bad'; return; }
     S.calib = m.speed; S.refLevel = m.env;
+    if (S.wowRead === 'pilot') {
+      if (m.pilot.hz < 12000 || m.pilot.hz > 23000 || m.pilot.amp < 0.003) {
+        el.textContent = 'Control tone OK, but no pilot tone found above 12 kHz — is the pilot WAV playing on the beat deck and the fader open?'; el.className = 'calres bad'; return;
+      }
+      S.pilotHz = m.pilot.hz; S.pilotRef = m.pilot.amp; save('pilotHz'); save('pilotRef');
+    }
     if (m.stat < 0) { S.flip = !S.flip; }
     S.calInfo = { speed: m.speed, level: m.env, when: Date.now() };
     ['calib', 'refLevel', 'flip', 'calInfo'].forEach(save);
@@ -430,7 +442,7 @@ function showCal() {
   const el = $('calRes'), c = S.calInfo;
   if (!c) { el.textContent = 'not calibrated — using nominal 1×'; el.className = 'calres'; return; }
   const db = 20 * Math.log10(Math.max(1e-6, c.level));
-  el.textContent = `1× = ${c.speed.toFixed(4)} of nominal · level ${db.toFixed(1)} dBFS${S.flip ? ' · flipped' : ''}`;
+  el.textContent = `1× = ${c.speed.toFixed(4)} of nominal · level ${db.toFixed(1)} dBFS${S.flip ? ' · flipped' : ''}${S.wowRead === 'pilot' ? ` · pilot ${(S.pilotHz / 1000).toFixed(2)} kHz` : ''}`;
   el.className = 'calres good';
 }
 
@@ -585,6 +597,11 @@ function syncButtons() {
 seg('ctrlCh', 'ctrlCh', () => node && applyRouting());
 seg('liveCh', 'liveCh', () => node && applyRouting());
 seg('mode', 'mode', () => param({ mode: S.mode }));
+const wowReadNote = () => { $('wowReadNote').innerHTML = S.wowRead === 'pilot'
+  ? 'WOW <code>settings.txt</code>: <b>fader_left = beat</b>, <b>fader_right = beat</b>. Pilot WAV in the <b>beats</b> folder, control tone in <b>samples</b>, mix knob centered. The platter stays tracked through every cut.'
+  : 'Fader cuts the control tone itself. Simple, but Scratcher can’t see the platter while the fader is closed.'; };
+seg('wowRead', 'wowRead', () => { param({ wowRead: S.wowRead }); wowReadNote(); });
+wowReadNote();
 seg('faderMode', 'faderMode', () => { store.set('faderMode2', S.faderMode); param({ faderMode: S.faderMode }); });
 slider('vfCut', 'vfCut', v => Math.round(v * 100) + '%', v => { param({ vfCut: v }); drawXf(); });
 slider('vfWidth', 'vfWidth', v => v < 0.03 ? 'sharp' : v < 0.15 ? 'medium' : 'smooth', v => { param({ vfWidth: v }); drawXf(); });
@@ -671,6 +688,21 @@ $('toneBtn').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
   a.download = `scratcher-control-tone-${secs}s.wav`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+});
+
+$('pilotBtn').addEventListener('click', () => {
+  const sr = 48000, secs = 60, n = sr * secs; // 18 kHz at 48 kHz = 3 cycles per 8 samples → seamless loop
+  const bytes = 44 + n * 4; const buf = new ArrayBuffer(bytes); const dv = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); dv.setUint32(4, bytes - 8, true); w(8, 'WAVE'); w(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 2, true); dv.setUint32(24, sr, true);
+  dv.setUint32(28, sr * 4, true); dv.setUint16(32, 4, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 4, true);
+  const out = new Int16Array(buf, 44);
+  for (let i = 0; i < n; i++) { const v = Math.round(Math.sin(2 * Math.PI * 3 * (i % 8) / 8) * 0.7 * 32767); out[2 * i] = v; out[2 * i + 1] = v; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  a.download = 'scratcher-pilot-18k-60s.wav'; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 });
 

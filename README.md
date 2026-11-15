@@ -9,7 +9,10 @@ It runs in Chrome as a single self-contained page: **https://samuelling.github.i
 - **Tape.** Live input is written continuously into a 32-second ring buffer.
 - **Needle.** A read head is driven by the decoded platter motion. Hands off at 1× and it rides just behind live, so you hear the input straight through. Pull back and you're scratching the last few seconds. Let go and it snaps back to live, or stays behind if you prefer that.
 - **Freeze.** Stops the tape and loops the last N seconds, so you can scratch a captured phrase like a record.
-- **Fader.** The WOW's own crossfader becomes Scratcher's fader: the control tone's level gates the output.
+- **Fader.** The WOW's own crossfader becomes Scratcher's fader, read one of two ways:
+  - **Pilot tone (recommended).** In the WOW's `settings.txt`, set `fader_left = beat` and `fader_right = beat`, and put `scratcher-pilot-18k-60s.wav` in the `beats` folder. The fader then cuts an 18 kHz pilot tone whose level is the fader position, while the control tone is never cut, so the platter stays tracked through every cut. Two wide notches remove the pilot before decoding. A low-pass would rotate the 3rd harmonic's phase and flip direction above about 2×. Calibrate measures the pilot's exact frequency and level.
+  - **Tone level.** The fader cuts the control tone itself. It's simpler, but platter motion is invisible while the fader is closed.
+- **Virtual fader.** An on-screen cut fader with cut-in, curve and hamster settings, used alone or together with the WOW's fader.
 
 ## The control tone (mono)
 
@@ -36,7 +39,7 @@ To try it without the WOW, set the control source to **Virtual platter** and dra
 src/dsp.js      decoder + scratch engine (shared by the worklet and the tests)
 src/worklet.js  AudioWorklet processor
 src/app.html    UI; build.py inlines the DSP into index.html
-test/           node test/test.js — decoder position accuracy across scratch gestures
+test/           node test/test.js — decoder accuracy; test_pilot.js — tracking through pilot-fader cuts
 ```
 
 Run `python3 build.py` after editing anything in `src/`.

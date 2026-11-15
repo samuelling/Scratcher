@@ -283,3 +283,75 @@ function faderCurve(level, lo, hi) {
 }
 
 if (typeof module !== 'undefined') module.exports = { F0, A3, TONE_PEAK, toneSample, ToneDecoder, ScratchEngine, faderCurve };
+
+// ---- Pilot-tone fader reader --------------------------------------------------
+// The WOW's fader is set to cut the BEAT only; the beat is a steady pilot tone
+// (~18 kHz). Its amplitude = fader position. The control tone (sample) is never cut.
+const PILOT_HZ = 18000;
+
+class Biquad {
+  constructor() { this.b0 = 1; this.b1 = 0; this.b2 = 0; this.a1 = 0; this.a2 = 0; this.z1 = 0; this.z2 = 0; }
+  notch(sr, f, q) {
+    const w = 2 * Math.PI * f / sr, al = Math.sin(w) / (2 * q), c = Math.cos(w), a0 = 1 + al;
+    this.b0 = 1 / a0; this.b1 = -2 * c / a0; this.b2 = 1 / a0; this.a1 = -2 * c / a0; this.a2 = (1 - al) / a0; return this;
+  }
+  lowpass(sr, f, q) {
+    const w = 2 * Math.PI * f / sr, al = Math.sin(w) / (2 * q), c = Math.cos(w), a0 = 1 + al;
+    this.b0 = (1 - c) / 2 / a0; this.b1 = (1 - c) / a0; this.b2 = (1 - c) / 2 / a0; this.a1 = -2 * c / a0; this.a2 = (1 - al) / a0; return this;
+  }
+  highpass(sr, f, q) {
+    const w = 2 * Math.PI * f / sr, al = Math.sin(w) / (2 * q), c = Math.cos(w), a0 = 1 + al;
+    this.b0 = (1 + c) / 2 / a0; this.b1 = -(1 + c) / a0; this.b2 = (1 + c) / 2 / a0; this.a1 = -2 * c / a0; this.a2 = (1 - al) / a0; return this;
+  }
+  process(x) { // transposed direct form II
+    const y = this.b0 * x + this.z1;
+    this.z1 = this.b1 * x - this.a1 * y + this.z2;
+    this.z2 = this.b2 * x - this.a2 * y;
+    return y;
+  }
+}
+
+class PilotReader {
+  constructor(sr) {
+    this.sr = sr;
+    this.n1 = new Biquad(); this.n2 = new Biquad();
+    this.mode = 'notch'; // a low-pass would rotate the 3rd harmonic's phase and flip direction above ~2x
+    this.lp = [0, 1, 2].map(() => new Biquad());
+    this.hp1 = new Biquad().highpass(sr, 12000, 0.54); this.hp2 = new Biquad().highpass(sr, 12000, 1.31);
+    this.c = 1; this.s = 0; this.i1 = 0; this.q1 = 0; this.i2 = 0; this.q2 = 0;
+    this.k = 1 - Math.exp(-2 * Math.PI * 700 / sr); // ~0.5 ms demod smoothing
+    this.amp = 0;
+    this.setFreq(PILOT_HZ);
+    // calibration helpers
+    this.hpPrev = 0; this.zc = 0; this.hpN = 0; this.hpSq = 0;
+  }
+  setFreq(f) {
+    this.f = Math.min(f, this.sr * 0.45);
+    const q = 0.8; // two wide notches: robust to the fader's on/off splatter
+    this.n1.notch(this.sr, this.f, q); this.n2.notch(this.sr, this.f, q);
+    // 6th-order Butterworth low-pass well below the pilot (kills it and most of its gating splatter)
+    const fc = Math.min(10000, this.f * 0.55), qs = [0.5176, 0.7071, 1.9319];
+    this.lp.forEach((b, i) => b.lowpass(this.sr, fc, qs[i]));
+    const w = 2 * Math.PI * this.f / this.sr; this.cw = Math.cos(w); this.sw = Math.sin(w);
+  }
+  // returns the control signal with the pilot notched out; updates this.amp
+  process(x) {
+    // rotating phasor local oscillator
+    const c = this.c * this.cw - this.s * this.sw, s = this.s * this.cw + this.c * this.sw;
+    const g = 1.5 - 0.5 * (c * c + s * s); this.c = c * g; this.s = s * g;
+    const k = this.k;
+    this.i1 += (x * c - this.i1) * k; this.q1 += (x * s - this.q1) * k;
+    this.i2 += (this.i1 - this.i2) * k; this.q2 += (this.q1 - this.q2) * k;
+    this.amp = 2 * Math.sqrt(this.i2 * this.i2 + this.q2 * this.q2);
+    // calibration: frequency + level of whatever lives above 12 kHz
+    const h = this.hp2.process(this.hp1.process(x));
+    if ((this.hpPrev <= 0 && h > 0)) this.zc++;
+    this.hpPrev = h; this.hpN++; this.hpSq += h * h;
+    if (this.mode === 'notch') return this.n2.process(this.n1.process(x));
+    return this.lp[2].process(this.lp[1].process(this.lp[0].process(x)));
+  }
+  resetMeasure() { this.zc = 0; this.hpN = 0; this.hpSq = 0; }
+  measured() { return { hz: this.hpN ? this.zc * this.sr / this.hpN : 0, amp: this.hpN ? Math.sqrt(2 * this.hpSq / this.hpN) : 0 }; }
+}
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { PILOT_HZ, Biquad, PilotReader });

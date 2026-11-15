@@ -4,6 +4,9 @@ class FlutterProcessor extends AudioWorkletProcessor {
     super();
     const sr = sampleRate;
     this.dec = new ToneDecoder(sr);
+    this.pilot = new PilotReader(sr);
+    this.wowRead = 'level'; // 'level' | 'pilot'
+    this.pilotRef = 0.3;
     this.eng = new ScratchEngine(sr);
     this.faderMode = 'wow';
     this.refLevel = 0.3;
@@ -38,6 +41,9 @@ class FlutterProcessor extends AudioWorkletProcessor {
         if ('flip' in m) d.flip = m.flip;
         if ('calib' in m) d.calib = m.calib;
         if ('refLevel' in m) this.refLevel = m.refLevel;
+        if ('wowRead' in m) this.wowRead = m.wowRead;
+        if ('pilotHz' in m) this.pilot.setFreq(m.pilotHz);
+        if ('pilotRef' in m) this.pilotRef = m.pilotRef;
         if ('outGain' in m) e.outGain = m.outGain;
         if ('sim' in m) this.sim.on = m.sim;
         if ('loopSec' in m) e.loopLen = Math.min(Math.round(m.loopSec * sampleRate), e.len - 8);
@@ -49,6 +55,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
       case 'simMotor': this.sim.motor = m.on; break;
       case 'simFader': this.sim.fader = m.v; break;
       case 'calibrate':
+        this.pilot.resetMeasure();
         this.cal = { n: 0, N: Math.round(1.5 * sampleRate), speeds: [], stat: 0, statN: 0, env: 0, envN: 0, active: 0 };
         break;
     }
@@ -81,13 +88,25 @@ class FlutterProcessor extends AudioWorkletProcessor {
         sim.v += (target - sim.v) * (sim.hand ? handK : motorK);
         sim.theta += 2 * Math.PI * F0 * sim.v / sr;
         if (sim.theta > 1e6) sim.theta -= 2 * Math.PI * Math.floor(sim.theta / (2 * Math.PI));
-        c = 0.445 * sim.fader * toneSample(sim.theta) + this.rnd() * 2e-4;
+        if (this.wowRead === 'pilot') {
+          sim.ph = (sim.ph || 0) + 2 * Math.PI * PILOT_HZ / sr;
+          if (sim.ph > 6.283185307179586) sim.ph -= 6.283185307179586;
+          sim.fg = (sim.fg || 0) + (sim.fader - (sim.fg || 0)) * 0.03; // ~1 ms digital fader ramp
+          c = 0.35 * toneSample(sim.theta) + 0.35 * sim.fg * Math.sin(sim.ph) + this.rnd() * 2e-4;
+        } else {
+          c = 0.445 * sim.fader * toneSample(sim.theta) + this.rnd() * 2e-4;
+        }
       }
-      const r = d.process(c);
+      const usePilot = this.wowRead === 'pilot';
+      const cc = usePilot ? this.pilot.process(c) : c;
+      const r = d.process(cc);
 
       let g = 1;
       const fm = this.faderMode;
-      if (fm === 'wow' || fm === 'both') g = faderCurve(d.env / Math.max(1e-4, this.refLevel), this.faderLo, this.faderHi);
+      if (fm === 'wow' || fm === 'both') {
+        const lvl = usePilot ? this.pilot.amp / Math.max(1e-4, this.pilotRef) : d.env / Math.max(1e-4, this.refLevel);
+        g = faderCurve(lvl, this.faderLo, this.faderHi);
+      }
       if (fm === 'virtual' || fm === 'both') g *= vfGain;
       g *= this.softCut;
 
@@ -117,7 +136,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
           this.port.postMessage({
             type: 'calibrated', speed: med, spread: med ? (hi - lo) / med : 1,
             stat: cal.statN ? cal.stat / cal.statN : 0, env: cal.envN ? cal.env / cal.envN : 0,
-            activeFrac: cal.active / cal.n,
+            activeFrac: cal.active / cal.n, pilot: this.pilot.measured(),
           });
           this.cal = null;
         }
@@ -133,7 +152,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
         type: 'state', v: e.vs, rate: e.rate, lag: e.lag, locked: e.locked, frozen: e.frozen,
         env: d.env, active: d.active, dir: d.dir, stat: d.lastStat, pos: d.posInt,
         gain: e.gain, ctrlPk: this.ctrlPk, livePk: this.livePk, outPk: this.outPk,
-        simV: sim.v, loopLen: e.loopLen, bins,
+        simV: sim.v, loopLen: e.loopLen, bins, pilotAmp: this.pilot.amp,
       }, bins ? [bins.buffer] : []);
       this.ctrlPk = 0; this.livePk = 0; this.outPk = 0;
     }
