@@ -19,7 +19,7 @@ It runs in Chrome as a single self-contained page: **https://samuelling.github.i
 - **Direction** comes from the sign of `E[x·(dx/dt)³]`. It flips when the platter reverses, it's independent of gain and speed, and because only odd harmonics are present it's **unaffected by polarity inversion** anywhere in the signal chain.
 - **Turnarounds** are caught as a mirror-symmetric lobe (statistic ≈ 0) and counted as zero net travel. That keeps baby scratches and scribbles from drifting.
 
-Load `scratcher-control-tone-2min.wav` onto the WOW as a sample, or generate a longer one from the app. Set the WOW's beat/sample balance **fully to sample**.
+Load `scratcher-control-tone-29s.wav` (48 kHz, 16-bit) into the WOW's `samples` folder. WOW samples are capped at 30 s. Set the WOW's beat/sample balance **fully to sample**.
 
 ## Setup
 
