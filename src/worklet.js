@@ -9,6 +9,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
     this.refLevel = 0.3;
     this.faderLo = 0.08; this.faderHi = 0.45;
     this.softCut = 1;
+    this.vf = { x: 0, cut: 0.05, width: 0.02, hamster: false };
     this.sim = { on: true, motor: true, hand: false, handV: 0, v: 0, theta: 0, fader: 1, seed: 1 };
     this.cal = null;
     this.binSize = 256; this.binAcc = 0; this.binN = 0; this.newBins = [];
@@ -27,6 +28,10 @@ class FlutterProcessor extends AudioWorkletProcessor {
         if ('snapDelay' in m) e.snapDelay = Math.round(m.snapDelay * 0.001 * sampleRate);
         if ('lock' in m) e.lockEnabled = m.lock;
         if ('faderMode' in m) this.faderMode = m.faderMode;
+        if ('vfX' in m) this.vf.x = m.vfX;
+        if ('vfCut' in m) this.vf.cut = m.vfCut;
+        if ('vfWidth' in m) this.vf.width = Math.max(0.005, m.vfWidth);
+        if ('hamster' in m) this.vf.hamster = m.hamster;
         if ('faderLo' in m) this.faderLo = m.faderLo;
         if ('faderHi' in m) this.faderHi = m.faderHi;
         if ('gate' in m) d.gate = m.gate;
@@ -65,6 +70,9 @@ class FlutterProcessor extends AudioWorkletProcessor {
     const d = this.dec, e = this.eng, sim = this.sim, tmp = this.tmp, sr = sampleRate;
     const handK = 1 - Math.exp(-1 / (0.002 * sr));
     const motorK = 1 - Math.exp(-1 / (0.09 * sr));
+    // virtual cut fader: deck on the left; open from the edge up to the cut-in point
+    const vfx = this.vf.hamster ? 1 - this.vf.x : this.vf.x;
+    const vfGain = 1 - faderCurve(vfx, this.vf.cut, this.vf.cut + this.vf.width);
 
     for (let i = 0; i < N; i++) {
       let c = ctrlIn ? ctrlIn[i] : 0;
@@ -78,7 +86,9 @@ class FlutterProcessor extends AudioWorkletProcessor {
       const r = d.process(c);
 
       let g = 1;
-      if (this.faderMode === 'wow') g = faderCurve(d.env / Math.max(1e-4, this.refLevel), this.faderLo, this.faderHi);
+      const fm = this.faderMode;
+      if (fm === 'wow' || fm === 'both') g = faderCurve(d.env / Math.max(1e-4, this.refLevel), this.faderLo, this.faderHi);
+      if (fm === 'virtual' || fm === 'both') g *= vfGain;
       g *= this.softCut;
 
       const lL = liveL ? liveL[i] : 0, lR = liveR ? liveR[i] : 0;

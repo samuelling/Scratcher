@@ -67,6 +67,14 @@
   details ol { padding-left: 18px; margin: 10px 0 0; color: #cfcac0; font-size: 13px; }
   details li { margin-bottom: 6px; }
   kbd { font: 11px var(--mono); background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 4px; padding: 1px 5px; }
+  .xf { position: relative; height: 64px; margin-top: 4px; touch-action: none; cursor: ew-resize; user-select: none; }
+  .xf .slot { position: absolute; left: 0; right: 0; top: 28px; height: 8px; background: #0a0a0a; border-radius: 4px; border: 1px solid #2c2c2c; }
+  .xf .zone { position: absolute; top: 0; bottom: 0; background: rgba(89,211,140,0.35); border-radius: 4px; }
+  .xf .knob { position: absolute; top: 6px; width: 34px; height: 52px; margin-left: -17px; border-radius: 6px;
+    background: linear-gradient(#3b3b3b, #232323); border: 1px solid #555; box-shadow: 0 2px 6px rgba(0,0,0,.6); }
+  .xf .knob::after { content: ''; position: absolute; left: 15px; top: 6px; bottom: 6px; width: 3px; background: var(--hot); border-radius: 2px; }
+  .xf.cut .knob::after { background: #444; }
+  .xf .lbl { position: absolute; top: 44px; font: 600 10px var(--mono); color: var(--dim); letter-spacing: .1em; }
   #gate-overlay { position: fixed; inset: 0; background: rgba(10,10,10,0.92); display: flex; align-items: center; justify-content: center; z-index: 10; }
   #gate-overlay .box { max-width: 460px; text-align: center; padding: 24px; }
   #gate-overlay h2 { font: 800 30px/1 var(--mono); letter-spacing: 0.2em; margin: 0 0 12px; }
@@ -110,6 +118,17 @@
           <canvas class="meter" id="speedMeter" width="600" height="52" style="grid-column:1/-1"></canvas>
         </div>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>Crossfader · <span id="xfState">open</span></h2>
+      <div class="xf" id="xf">
+        <div class="slot"><div class="zone" id="xfZone"></div></div>
+        <span class="lbl" style="left:0" id="xfLblA">SCRATCH ◂</span>
+        <span class="lbl" style="right:0" id="xfLblB">▸ CUT</span>
+        <div class="knob" id="xfKnob"></div>
+      </div>
+      <p class="note">Drag the fader, or hold <kbd>C</kbd> to cut. The green zone is where the scratch is audible; set its size, curve and hamster in <b>Fader</b>.</p>
     </div>
 
     <div class="card">
@@ -194,8 +213,13 @@
     <div class="card">
       <h2>Fader</h2>
       <div class="row"><label>Source</label>
-        <div class="seg" id="faderMode"><button data-v="wow">WOW crossfader</button><button data-v="open">Always open</button></div>
+        <div class="seg" id="faderMode"><button data-v="both">WOW + virtual</button><button data-v="wow">WOW</button><button data-v="virtual">Virtual</button><button data-v="open">Open</button></div>
       </div>
+      <h2 style="margin-top:14px">Virtual fader</h2>
+      <div class="row"><label>Cut-in</label><input type="range" id="vfCut" class="grow" min="0.01" max="0.6" step="0.01" value="0.05"><output id="vfCutOut">5%</output></div>
+      <div class="row"><label>Curve</label><input type="range" id="vfWidth" class="grow" min="0.005" max="0.4" step="0.005" value="0.02"><output id="vfWidthOut">sharp</output></div>
+      <div class="row"><label>Hamster</label><button id="hamBtn">off</button></div>
+      <h2 style="margin-top:14px">WOW fader</h2>
       <div class="row"><label>Cut point</label><input type="range" id="faderLo" class="grow" min="0.01" max="0.5" step="0.01" value="0.08"><output id="faderLoOut">8%</output></div>
       <div class="row"><label>Full open</label><input type="range" id="faderHi" class="grow" min="0.1" max="1" step="0.01" value="0.45"><output id="faderHiOut">45%</output></div>
       <div class="row"><label>Noise gate</label><input type="range" id="gate" class="grow" min="-80" max="-30" step="1" value="-56"><output id="gateOut">-56 dB</output></div>
@@ -227,7 +251,7 @@ const S = {
   liveDev: store.get('liveDev', 'test'), liveCh: store.get('liveCh', 'S'),
   outDev: store.get('outDev', ''),
   smooth: store.get('smooth', 2), mode: store.get('mode', 'snap'), snapDelay: store.get('snapDelay', 180),
-  lock: store.get('lock', true), faderMode: store.get('faderMode', 'wow'),
+  lock: store.get('lock', true), faderMode: store.get('faderMode2', 'both'), vfCut: store.get('vfCut', 0.05), vfWidth: store.get('vfWidth', 0.02), hamster: store.get('hamster', false), vfX: 0,
   faderLo: store.get('faderLo', 0.08), faderHi: store.get('faderHi', 0.45), gate: store.get('gate', -56),
   flip: store.get('flip', false), calib: store.get('calib', 1), refLevel: store.get('refLevel', 0.3),
   calInfo: store.get('calInfo', null), outGain: store.get('outGain', 1), loopSec: store.get('loopSec', 4),
@@ -378,7 +402,7 @@ function showLatency() {
 function sendAllParams() {
   node.port.postMessage({
     type: 'params', smoothMs: S.smooth, mode: S.mode, snapDelay: S.snapDelay, lock: S.lock,
-    faderMode: S.faderMode, faderLo: S.faderLo, faderHi: S.faderHi, gate: Math.pow(10, S.gate / 20),
+    faderMode: S.faderMode, vfX: S.vfX, vfCut: S.vfCut, vfWidth: S.vfWidth, hamster: S.hamster, faderLo: S.faderLo, faderHi: S.faderHi, gate: Math.pow(10, S.gate / 20),
     flip: S.flip, calib: S.calib, refLevel: S.refLevel, outGain: S.outGain, loopSec: S.loopSec,
   });
 }
@@ -555,12 +579,37 @@ function slider(id, key, fmt, onChange) {
 function syncButtons() {
   $('flipBtn').textContent = S.flip ? 'on' : 'off'; $('flipBtn').classList.toggle('on', S.flip);
   $('lockBtn').textContent = S.lock ? 'on' : 'off'; $('lockBtn').classList.toggle('on', S.lock);
+  $('hamBtn').textContent = S.hamster ? 'on' : 'off'; $('hamBtn').classList.toggle('on', S.hamster);
 }
 
 seg('ctrlCh', 'ctrlCh', () => node && applyRouting());
 seg('liveCh', 'liveCh', () => node && applyRouting());
 seg('mode', 'mode', () => param({ mode: S.mode }));
-seg('faderMode', 'faderMode', () => param({ faderMode: S.faderMode }));
+seg('faderMode', 'faderMode', () => { store.set('faderMode2', S.faderMode); param({ faderMode: S.faderMode }); });
+slider('vfCut', 'vfCut', v => Math.round(v * 100) + '%', v => { param({ vfCut: v }); drawXf(); });
+slider('vfWidth', 'vfWidth', v => v < 0.03 ? 'sharp' : v < 0.15 ? 'medium' : 'smooth', v => { param({ vfWidth: v }); drawXf(); });
+$('hamBtn').addEventListener('click', () => { S.hamster = !S.hamster; save('hamster'); syncButtons(); param({ hamster: S.hamster }); drawXf(); });
+
+// ---------- virtual crossfader ----------
+const xf = $('xf');
+function vfGainUI(x) { const u = S.hamster ? 1 - x : x; const t = Math.max(0, Math.min(1, (u - S.vfCut) / Math.max(0.005, S.vfWidth))); return 1 - t * t * (3 - 2 * t); }
+function drawXf() {
+  $('xfKnob').style.left = (S.vfX * 100) + '%';
+  const z = $('xfZone'), w = Math.min(1, S.vfCut + S.vfWidth / 2) * 100;
+  z.style.width = w + '%'; z.style.left = S.hamster ? (100 - w) + '%' : '0';
+  $('xfLblA').textContent = S.hamster ? '◂ CUT' : 'SCRATCH ◂';
+  $('xfLblB').textContent = S.hamster ? '▸ SCRATCH' : '▸ CUT';
+  const g = vfGainUI(S.vfX);
+  xf.classList.toggle('cut', g < 0.5);
+  $('xfState').textContent = g > 0.99 ? 'open' : g < 0.01 ? 'cut' : Math.round(g * 100) + '%';
+}
+let xfDrag = false;
+const xfSet = (e) => { const r = xf.getBoundingClientRect(); S.vfX = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); param({ vfX: S.vfX }); drawXf(); };
+xf.addEventListener('pointerdown', (e) => { xfDrag = true; xf.setPointerCapture(e.pointerId); xfSet(e); });
+xf.addEventListener('pointermove', (e) => { if (xfDrag) xfSet(e); });
+xf.addEventListener('pointerup', () => { xfDrag = false; });
+xf.addEventListener('pointercancel', () => { xfDrag = false; });
+drawXf();
 slider('smooth', 'smooth', v => v.toFixed(1) + ' ms', v => param({ smoothMs: v }));
 slider('snapDelay', 'snapDelay', v => v + ' ms', v => param({ snapDelay: v }));
 slider('faderLo', 'faderLo', v => Math.round(v * 100) + '%', v => param({ faderLo: v }));
