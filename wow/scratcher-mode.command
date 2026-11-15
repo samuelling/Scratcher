@@ -1,7 +1,7 @@
 #!/bin/bash
 # Scratcher mode switch for the Headache Sound WOW.
 # Double-click (or run in Terminal) with the WOW connected over USB-C.
-#  • Normal → Scratcher: backs up settings.txt, sets the fader to cut the beat only,
+#  • Normal → Scratcher: backs up wow_settings.txt, sets the fader to cut the beat only,
 #    zeroes delay/reverb, copies the control tone (samples) and pilot (beats).
 #  • Scratcher → Normal: puts everything back exactly as it was.
 # Keep the two .wav files next to this script.
@@ -20,11 +20,13 @@ ask()  { local a; read -r -p "$1 [y/N] " a; [ "$a" = "y" ] || [ "$a" = "Y" ]; }
 ask_yes() { local a; read -r -p "$1 [Y/n] " a; [ "$a" != "n" ] && [ "$a" != "N" ]; }
 
 # ---- find the WOW ---------------------------------------------------------------
-# A WOW is a folder holding settings.txt (mentioning wowmachine or fader_left) next to samples/ and beats/.
-is_wow() {
-  [ -f "$1/settings.txt" ] || return 1
-  grep -qiE 'wowmachine|fader_left' "$1/settings.txt" 2>/dev/null
+# A WOW is a folder holding wow_settings.txt (mentioning wowmachine or fader_left) next to samples/ and beats/.
+settings_in() { # prints the settings file name used in folder $1 (WOW: wow_settings.txt)
+  local n; for n in wow_settings.txt settings.txt scsettings.txt; do
+    [ -f "$1/$n" ] && grep -qiE 'wowmachine|fader_left' "$1/$n" 2>/dev/null && { printf '%s' "$n"; return 0; }
+  done; return 1
 }
+is_wow() { settings_in "$1" >/dev/null; }
 WOW=""
 if [ $# -ge 1 ]; then
   WOW="${1%/}"
@@ -40,27 +42,27 @@ if [ -z "$WOW" ]; then
   say "Couldn't find the WOW automatically. Drives visible right now:"
   ls -1 "$VOLROOT" 2>/dev/null | sed 's/^/    /'
   say ""
-  say "Drag the WOW's drive (or the folder containing settings.txt) from Finder into this window, then press Return:"
+  say "Drag the WOW's drive (or the folder containing wow_settings.txt) from Finder into this window, then press Return:"
   read -r WOW
   WOW="${WOW%/}"; WOW="${WOW%\ }"; WOW="$(printf '%s' "$WOW" | sed -e "s/^'//" -e "s/'$//" -e 's/\\ / /g' -e 's/[[:space:]]*$//')"
 fi
 [ -n "$WOW" ] && [ -d "$WOW" ] || die "That isn't a folder: $WOW"
-[ -f "$WOW/settings.txt" ] || die "No settings.txt in $WOW. If macOS asked whether Terminal may access a removable volume, allow it (System Settings → Privacy & Security → Files and Folders) and try again."
-[ -d "$WOW/samples" ] && [ -d "$WOW/beats" ] || die "Found settings.txt in $WOW but no samples/ and beats/ folders next to it."
-say "WOW found at: $WOW"
+SET="$(settings_in "$WOW")" || die "No wow_settings.txt in $WOW. If macOS asked whether Terminal may access a removable volume, allow it (System Settings → Privacy & Security → Files and Folders) and try again."
+[ -d "$WOW/samples" ] && [ -d "$WOW/beats" ] || die "Found $SET in $WOW but no samples/ and beats/ folders next to it."
+say "WOW found at: $WOW  (settings file: $SET)"
 say ""
 
 # remove macOS ._ metadata files the WOW might mistake for audio
 clean_dots() {
   find "$WOW/samples" "$WOW/beats" -maxdepth 1 -name '._*' -type f -delete 2>/dev/null
-  rm -f "$WOW/._settings.txt" "$WOW/._$MARK" 2>/dev/null
+  rm -f "$WOW/._$SET" "$WOW/._$MARK" 2>/dev/null
   command -v dot_clean >/dev/null 2>&1 && dot_clean -m "$WOW" 2>/dev/null
   return 0
 }
 
-# set "key = value" in settings.txt, keeping the column alignment and line endings
+# set "key = value" in the settings file, keeping the column alignment and line endings
 setkey() {
-  perl -pi -e 's/^(\Q'"$1"'\E\s*=\s*)[^\r\n]*/${1}'"$2"'/' "$WOW/settings.txt"
+  perl -pi -e 's/^(\Q'"$1"'\E\s*=\s*)[^\r\n]*/${1}'"$2"'/' "$WOW/$SET"
 }
 
 if [ ! -f "$WOW/$MARK" ]; then
@@ -71,7 +73,7 @@ if [ ! -f "$WOW/$MARK" ]; then
   if [ -n "$(find "$BACKUP/parked" -type f 2>/dev/null | head -1)" ]; then
     die "$BACKUP/parked still has files from an earlier run. Move them back onto the WOW (or delete them) first."
   fi
-  cp -X "$WOW/settings.txt" "$BACKUP/settings-normal.txt" || die "Couldn't back up settings.txt"
+  cp -X "$WOW/$SET" "$BACKUP/settings-normal.txt" || die "Couldn't back up $SET"
 
   # The WOW caps total beat+sample audio at ~2.5 min and may load files in copy order,
   # so leftover beats can crowd the Scratcher files out. Parking is the default.
@@ -97,12 +99,12 @@ if [ ! -f "$WOW/$MARK" ]; then
   sync
   say ""
   say "✓ SCRATCHER mode. Settings changed:"
-  grep -E '^(fader_left|fader_right|delay_strength|reverb_strength)' "$WOW/settings.txt" | sed 's/^/    /'
+  grep -E '^(fader_left|fader_right|delay_strength|reverb_strength)' "$WOW/$SET" | sed 's/^/    /'
 else
   # ================= Scratcher → Normal =================
   say "WOW is in SCRATCHER mode → switching back to NORMAL mode."
   [ -f "$BACKUP/settings-normal.txt" ] || die "No backup at $BACKUP/settings-normal.txt — can't restore safely."
-  cp -X "$BACKUP/settings-normal.txt" "$WOW/settings.txt" || die "Couldn't restore settings.txt"
+  cp -X "$BACKUP/settings-normal.txt" "$WOW/$SET" || die "Couldn't restore $SET"
   rm -f "$WOW/samples/$CTRL" "$WOW/beats/$PILOT"
   for d in samples beats; do
     for f in "$BACKUP/parked/$d"/*; do
@@ -114,7 +116,7 @@ else
   clean_dots
   sync
   say ""
-  say "✓ NORMAL mode — your original settings.txt and files are back."
+  say "✓ NORMAL mode — your original $SET and files are back."
 fi
 
 say ""

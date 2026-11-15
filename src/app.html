@@ -159,7 +159,7 @@
         <summary>WOW setup</summary>
         <ol>
           <li>Download the <b>control tone</b> (right panel) and load it onto the WOW as a <b>sample</b>, the same way you load any scratch sample.</li>
-          <li><b>Pilot-fader mode (recommended):</b> put the pilot WAV in the WOW's <b>beats</b> folder, set <code>fader_left = beat</code> and <code>fader_right = beat</code> in settings.txt, center the mix knob, keep delay/reverb off. <b>Tone-level mode:</b> balance fully to sample instead.</li>
+          <li><b>Pilot-fader mode (recommended):</b> put the pilot WAV in the WOW's <b>beats</b> folder, set <code>fader_left = beat</code> and <code>fader_right = beat</code> in wow_settings.txt, center the mix knob, keep delay/reverb off. <b>Tone-level mode:</b> balance fully to sample instead.</li>
           <li>WOW output → an input on your interface. Live audio (synth, mic, OP-1, anything) → another input. Pick both above.</li>
           <li>Motor on, hands off, fader open → press <b>Calibrate</b>. It measures 1× speed and the WOW's output level, so the WOW crossfader becomes Scratcher's fader.</li>
           <li>Scratch. Hands off and the needle rides at live. Pull back and you're scratching the last few seconds; let go and it snaps back to live, unless Return is set to <b>Stay</b>.</li>
@@ -598,7 +598,7 @@ seg('ctrlCh', 'ctrlCh', () => node && applyRouting());
 seg('liveCh', 'liveCh', () => node && applyRouting());
 seg('mode', 'mode', () => param({ mode: S.mode }));
 const wowReadNote = () => { $('wowReadNote').innerHTML = S.wowRead === 'pilot'
-  ? 'WOW <code>settings.txt</code>: <b>fader_left = beat</b>, <b>fader_right = beat</b>. Pilot WAV in the <b>beats</b> folder, control tone in <b>samples</b>, mix knob centered. The platter stays tracked through every cut.'
+  ? 'WOW <code>wow_settings.txt</code>: <b>fader_left = beat</b>, <b>fader_right = beat</b>. Pilot WAV in the <b>beats</b> folder, control tone in <b>samples</b>, mix knob centered. The platter stays tracked through every cut.'
   : 'Fader cuts the control tone itself. Simple, but Scratcher can’t see the platter while the fader is closed.'; };
 seg('wowRead', 'wowRead', () => { param({ wowRead: S.wowRead }); wowReadNote(); });
 wowReadNote();
