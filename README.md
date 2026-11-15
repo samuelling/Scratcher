@@ -10,7 +10,7 @@ It runs in Chrome as a single self-contained page: **https://samuelling.github.i
 - **Needle.** A read head is driven by the decoded platter motion. Hands off at 1× and it rides just behind live, so you hear the input straight through. Pull back and you're scratching the last few seconds. Let go and it snaps back to live, or stays behind if you prefer that.
 - **Freeze.** Stops the tape and loops the last N seconds, so you can scratch a captured phrase like a record.
 - **Fader.** The WOW's own crossfader becomes Scratcher's fader, read one of two ways:
-  - **Pilot tone (recommended).** In the WOW's `settings.txt`, set `fader_left = beat` and `fader_right = beat`, and put `scratcher-pilot-18k-60s.wav` in the `beats` folder. The fader then cuts an 18 kHz pilot tone whose level is the fader position, while the control tone is never cut, so the platter stays tracked through every cut. Two wide notches remove the pilot before decoding. A low-pass would rotate the 3rd harmonic's phase and flip direction above about 2×. Calibrate measures the pilot's exact frequency and level.
+  - **Pilot tone (recommended).** In the WOW's `settings.txt`, set `fader_left = beat` and `fader_right = beat`, and put the pilot in the `beats` folder (or let `wow/scratcher-mode.command` do all of this). The fader then cuts an 18 kHz pilot tone whose level is the fader position, while the control tone is never cut, so the platter stays tracked through every cut. Two wide notches remove the pilot before decoding. A low-pass would rotate the 3rd harmonic's phase and flip direction above about 2×. Calibrate measures the pilot's exact frequency and level.
   - **Tone level.** The fader cuts the control tone itself. It's simpler, but platter motion is invisible while the fader is closed.
 - **Virtual fader.** An on-screen cut fader with cut-in, curve and hamster settings, used alone or together with the WOW's fader.
 
@@ -22,7 +22,11 @@ It runs in Chrome as a single self-contained page: **https://samuelling.github.i
 - **Direction** comes from the sign of `E[x·(dx/dt)³]`. It flips when the platter reverses, it's independent of gain and speed, and because only odd harmonics are present it's **unaffected by polarity inversion** anywhere in the signal chain.
 - **Turnarounds** are caught as a mirror-symmetric lobe (statistic ≈ 0) and counted as zero net travel. That keeps baby scratches and scribbles from drifting.
 
-Load `scratcher-control-tone-29s.wav` (48 kHz, 16-bit) into the WOW's `samples` folder. WOW samples are capped at 30 s. Set the WOW's beat/sample balance **fully to sample**.
+The `wow/` folder has everything the WOW needs:
+
+- `00-scratcher-control.wav`: the control tone (samples folder; 48 kHz, 16-bit, 29 s, under the WOW's 30 s sample cap)
+- `00-scratcher-pilot.wav`: the 18 kHz pilot (beats folder)
+- `scratcher-mode.command`: a double-click switch between **Normal** and **Scratcher** mode. Plug the WOW into the Mac and run it. It backs up `settings.txt` to `~/Scratcher-WOW`, sets `fader_left/right = beat` and zeroes delay/reverb, copies the two files, and can optionally park your other beats and samples on the Mac. Run it again and everything goes back exactly as it was. It also cleans macOS `._` metadata files the WOW might try to load as audio. Restart the WOW after switching. Set the WOW's beat/sample balance **fully to sample**.
 
 ## Setup
 
