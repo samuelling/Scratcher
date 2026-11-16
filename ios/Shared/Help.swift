@@ -150,6 +150,8 @@ struct HelpSheet: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(ThemeBackground())
             .navigationTitle(HelpText.title(topic))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
@@ -222,7 +224,7 @@ struct WalkthroughView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 18) {
                             Image(systemName: p.icon).font(.system(size: 44)).foregroundStyle(accent)
-                            Text(p.title).font(.title2.weight(.bold))
+                            Text(p.title.uppercased()).font(Theme.wide(20, .heavy))
                             VStack(alignment: .leading, spacing: 12) {
                                 ForEach(p.steps, id: \.self) { s in
                                     HStack(alignment: .top, spacing: 10) {
@@ -263,7 +265,7 @@ struct WalkthroughView: View {
             .buttonStyle(.borderedProminent)
             .padding()
         }
-        .background(Color(white: 0.06))
+        .background(ThemeBackground())
         .tint(accent)
         .preferredColorScheme(.dark)
     }
