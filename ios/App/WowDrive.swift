@@ -27,6 +27,9 @@ struct WowDrive {
     static let liveSkratchValues: [(String, String)] = [
         ("fader_left", "beat"), ("fader_right", "beat"), ("delay_strength", "0"), ("reverb_strength", "0")]
 
+    /// Normal mode always gets these, whatever the backup says: the fader cuts the samples and never the beat.
+    static let normalValues: [(String, String)] = [("fader_left", "sample"), ("fader_right", "sample")]
+
     let root: URL
     let settingsName: String
     private var fm: FileManager { .default }
@@ -113,12 +116,12 @@ struct WowDrive {
         if fm.fileExists(atPath: backupURL.path) {
             try copyReplacing(backupURL, to: settingsURL)
         } else {
-            // switched by the Mac script, whose backup lives on that Mac: put the fader back on the sample at least
-            var t = try readSettings()
-            t = WowDrive.setKey(t, "fader_left", "sample"); t = WowDrive.setKey(t, "fader_right", "sample")
-            try writeSettings(t)
             note = " The original settings backup is on the Mac that ran the script, so delay and reverb stay at 0."
         }
+        // Normal mode: the fader always cuts the samples only, both sides, so the beat always plays.
+        var t = try readSettings()
+        for (k, v) in WowDrive.normalValues { t = WowDrive.setKey(t, k, v) }
+        try writeSettings(t)
         for name in [WowDrive.controlName] + WowDrive.legacyNames {
             try? fm.removeItem(at: root.appendingPathComponent("samples").appendingPathComponent(name))
         }

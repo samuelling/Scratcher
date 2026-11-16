@@ -105,6 +105,8 @@ else
   say "WOW is in SCRATCHER mode → switching back to NORMAL mode."
   [ -f "$BACKUP/settings-normal.txt" ] || die "No backup at $BACKUP/settings-normal.txt — can't restore safely."
   cp -X "$BACKUP/settings-normal.txt" "$WOW/$SET" || die "Couldn't restore $SET"
+  setkey fader_left sample      # Normal: the fader cuts the samples only, so the beat always plays
+  setkey fader_right sample
   rm -f "$WOW/samples/$CTRL" "$WOW/beats/$PILOT"
   for d in samples beats; do
     for f in "$BACKUP/parked/$d"/*; do

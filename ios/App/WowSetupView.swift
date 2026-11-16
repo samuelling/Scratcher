@@ -135,7 +135,7 @@ struct WowSetupSection: View {
             Text(wow.driveName == nil
                  ? "Plug the WOW in with USB-C so it shows up in Files, then choose its drive. You only do this once."
                  : wow.mode == .normal
-                    ? "Normal: your own beats, samples and settings. Switching puts them aside in a LiveSkratch folder on the WOW and puts them back when you switch back. Eject the WOW in Files and restart it after switching."
+                    ? "Normal: your own beats, samples and settings, with the fader cutting the samples only, so the beat always plays. Switching puts them aside in a LiveSkratch folder on the WOW and puts them back when you switch back. Eject the WOW in Files and restart it after switching."
                     : "LiveSkratch: control tone as the sample, pilot as the beat, fader cuts the beat, effects off. Eject the WOW in Files and restart it after switching.")
         }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { r in
