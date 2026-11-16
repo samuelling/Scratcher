@@ -104,7 +104,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
       }
       const usePilot = this.wowRead === 'pilot';
       d.gainLn = usePilot ? this.pilotGain : null;
-      const cc = usePilot ? this.pilot.process(c) : c;
+      const pc = this.pilot.process(c);           // always runs: measures the pilot even in tone-level mode
+      const cc = usePilot ? pc : c;
       const r = d.process(cc);
 
       let g = 1;

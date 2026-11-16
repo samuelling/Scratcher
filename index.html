@@ -650,7 +650,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
       }
       const usePilot = this.wowRead === 'pilot';
       d.gainLn = usePilot ? this.pilotGain : null;
-      const cc = usePilot ? this.pilot.process(c) : c;
+      const pc = this.pilot.process(c);           // always runs: measures the pilot even in tone-level mode
+      const cc = usePilot ? pc : c;
       const r = d.process(cc);
 
       let g = 1;
@@ -1047,10 +1048,25 @@ function drawStrip() {
   scx.fillStyle = '#e9e5dc'; scx.fillRect(W - 2, 0, 2, H);
 }
 
+// The WOW is in pilot mode if an 18 kHz pilot is present: switch the fader reading automatically,
+// otherwise the unfiltered pilot scrambles the speed reading.
+let pilotSeen = 0;
+function autoPilot() {
+  if (S.ctrlDev === 'sim' || S.wowRead === 'pilot') { pilotSeen = 0; return; }
+  if (st.active && st.pilotAmp > 0.004 && st.pilotAmp > 0.15 * st.env) pilotSeen++; else pilotSeen = 0;
+  if (pilotSeen > 20) {
+    S.wowRead = 'pilot'; store.set('wowRead', 'pilot'); param({ wowRead: 'pilot' });
+    document.querySelectorAll('#wowRead button').forEach(b => b.classList.toggle('on', b.dataset.v === 'pilot'));
+    wowReadNote();
+    $('calRes').textContent = 'Pilot tone detected: switched the fader reading to "Pilot tone". Calibrate again.';
+    $('calRes').className = 'calres';
+    pilotSeen = 0;
+  }
+}
 function setBar(el, pk) { const db = 20 * Math.log10(Math.max(1e-5, pk)); el.style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%'; el.style.background = pk > 0.95 ? '#ff5a1f' : '#59d38c'; }
 
 function draw() {
-  drawPlatter(); drawSpeedMeter(); drawStrip();
+  drawPlatter(); drawSpeedMeter(); drawStrip(); autoPilot();
   const sr = ctx ? ctx.sampleRate : SPS;
   const sp = Math.abs(st.rate || 0) < 0.005 ? 0 : st.rate;
   $('roSpeed').innerHTML = `${sp.toFixed(2)}<small>×</small>`;
