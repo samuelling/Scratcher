@@ -68,8 +68,13 @@ struct ScratcherTabs<Setup: View>: View {
 
 struct PlayView: View {
     @ObservedObject var model: ScratcherModel
+    @ObservedObject private var live: LiveState
     var problem: String?
     var onHelp: () -> Void = {}
+    init(model: ScratcherModel, problem: String?, onHelp: @escaping () -> Void = {}) {
+        _model = ObservedObject(wrappedValue: model); _live = ObservedObject(wrappedValue: model.live)
+        self.problem = problem; self.onHelp = onHelp
+    }
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -116,7 +121,7 @@ struct PlayView: View {
                 HelpButton(action: onHelp).tint(Theme.ink)
             }
             HStack(spacing: 6) {
-                let s = model.state
+                let s = live.state
                 Pill(on: s.active, text: s.active ? "Signal" : "No signal", color: s.active ? Theme.green : Theme.red)
                 Pill(on: s.locked, text: "1× lock", color: Theme.blue)
                 Pill(on: model.settings.calibrated, text: model.settings.calibrated ? "Calibrated" : "Not calibrated",
@@ -129,9 +134,9 @@ struct PlayView: View {
 
     private var controls: some View {
         VStack(spacing: 16) {
-            Readouts(state: model.state, sampleRate: model.sampleRate)
+            Readouts(state: live.state, sampleRate: model.sampleRate)
             TapeView(model: model).frame(height: 56)
-            Meters(state: model.state)
+            Meters(state: live.state)
             if model.settings.faderStyle == .pad {
                 FaderPad(model: model)
             } else {
@@ -189,12 +194,14 @@ struct LCDBackground: View {
 
 struct Crossfader: View {
     @ObservedObject var model: ScratcherModel
+    @ObservedObject private var live: LiveState
+    init(model: ScratcherModel) { _model = ObservedObject(wrappedValue: model); _live = ObservedObject(wrappedValue: model.live) }
     var body: some View {
         VStack(spacing: 4) {
             HStack {
                 Text("CROSSFADER").font(Theme.wide(11, .semibold)).kerning(1.2).foregroundStyle(Theme.dim)
                 Spacer()
-                Text(String(format: "%.0f%% open", model.state.gain * 100))
+                Text(String(format: "%.0f%% open", live.state.gain * 100))
                     .font(Theme.lcdFont(13)).foregroundStyle(Theme.dim)
             }
             Slider(value: model.binding(\.vfX), in: 0...1).tint(Theme.green)
@@ -247,13 +254,15 @@ struct Hatch: View {
 
 struct Transport: View {
     @ObservedObject var model: ScratcherModel
+    @ObservedObject private var live: LiveState
+    init(model: ScratcherModel) { _model = ObservedObject(wrappedValue: model); _live = ObservedObject(wrappedValue: model.live) }
     var body: some View {
         HStack(spacing: 10) {
             if model.settings.faderStyle == .slider {
                 HoldButton(title: "Cut", icon: "scissors") { model.setCut($0) }
             }
-            TransportButton(title: model.state.frozen ? "Frozen" : "Freeze", icon: "snowflake",
-                            lit: model.state.frozen, color: Theme.amber) { model.toggleFreeze() }
+            TransportButton(title: live.state.frozen ? "Frozen" : "Freeze", icon: "snowflake",
+                            lit: live.state.frozen, color: Theme.amber) { model.toggleFreeze() }
             TransportButton(title: "Live", icon: "forward.end", lit: false, color: Theme.blue) { model.jumpToLive() }
         }
         .frame(height: 54)
@@ -341,6 +350,8 @@ struct LEDBar: View {
 /// The platter turns with the decoded position. With the virtual platter on, drag it to scratch.
 struct PlatterView: View {
     @ObservedObject var model: ScratcherModel
+    @ObservedObject private var live: LiveState
+    init(model: ScratcherModel) { _model = ObservedObject(wrappedValue: model); _live = ObservedObject(wrappedValue: model.live) }
     @State private var lastAngle: Double? = nil
     @State private var lastTime = Date()
     @State private var vel = 0.0
@@ -348,8 +359,8 @@ struct PlatterView: View {
     var body: some View {
         GeometryReader { g in
             let size = min(g.size.width, g.size.height)
-            let angle = (model.state.pos / model.sampleRate * revPerSecond).truncatingRemainder(dividingBy: 1) * 2 * .pi
-            let locked = model.state.locked
+            let angle = (live.state.pos / model.sampleRate * revPerSecond).truncatingRemainder(dividingBy: 1) * 2 * .pi
+            let locked = live.state.locked
             Canvas { ctx, sz in
                 let c = CGPoint(x: sz.width / 2, y: sz.height / 2), r = min(sz.width, sz.height) / 2 - 2
                 let lw: CGFloat = max(1.5, r / 110)
@@ -418,15 +429,17 @@ struct PlatterView: View {
 /// The last ~11 s of live audio, with the needle and the freeze loop marked.
 struct TapeView: View {
     @ObservedObject var model: ScratcherModel
+    @ObservedObject private var live: LiveState
+    init(model: ScratcherModel) { _model = ObservedObject(wrappedValue: model); _live = ObservedObject(wrappedValue: model.live) }
     var body: some View {
         Canvas { ctx, sz in
-            let bins = model.bins, n = bins.count, head = model.binHead
+            let bins = live.bins, n = bins.count, head = live.binHead
             let frame = CGRect(origin: .zero, size: sz).insetBy(dx: 0.75, dy: 0.75)
             ctx.stroke(Path(roundedRect: frame, cornerRadius: 8), with: .color(Theme.line), lineWidth: Theme.stroke)
             let w = sz.width / CGFloat(n), mid = sz.height / 2
             var center = Path(); center.move(to: CGPoint(x: 0, y: mid)); center.addLine(to: CGPoint(x: sz.width, y: mid))
             ctx.stroke(center, with: .color(Theme.line), lineWidth: 1)
-            let s = model.state
+            let s = live.state
             // the envelope as two thin lines
             for sign in [-1.0, 1.0] {
                 var p = Path()

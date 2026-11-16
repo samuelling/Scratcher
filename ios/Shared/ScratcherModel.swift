@@ -37,12 +37,20 @@ final class LoopSlot {
     }
 }
 
-/// UI model shared by the app and the AUv3 view: polls the processor ~30×/s and forwards actions.
-final class ScratcherModel: ObservableObject {
-    weak var host: ScratcherHost?
+/// The fast-changing display data.
+final class LiveState: ObservableObject {
     @Published var state = ProcessorState()
     @Published var bins: [Float] = Array(repeating: 0, count: 2048)
     @Published var binHead = 0
+}
+
+/// UI model shared by the app and the AUv3 view: polls the processor ~30×/s and forwards actions.
+final class ScratcherModel: ObservableObject {
+    weak var host: ScratcherHost?
+    /// Meters, platter and tape: updated 30×/s, so they live in their own object. Only the Scratch screen
+    /// watches it; settings screens don't redraw at 30 Hz (which made their dropdowns drop taps).
+    let live = LiveState()
+    var state: ProcessorState { live.state }
     @Published var calMessage = "Not calibrated: using nominal 1×"
     @Published var calOK: Bool? = nil
     @Published var diagnosticURL: URL? = nil
@@ -83,13 +91,13 @@ final class ScratcherModel: ObservableObject {
         }
         // a finger resting on the platter without moving holds it still
         if handDown && Date().timeIntervalSince(handStamp) > 0.06 { p.simHandV = 0 }
-        state = p.state
+        live.state = p.state
         p.resetPeaks()
         // tape overview
-        var b = bins
+        var b = live.bins
         let n = min(b.count, p.binCount)
         for i in 0..<n { b[i] = p.bins[i] }
-        bins = b; binHead = p.binHead
+        live.bins = b; live.binHead = p.binHead
         // calibration finished?
         if p.calibrationSerial != lastCalSerial, let c = p.calibration {
             lastCalSerial = p.calibrationSerial
