@@ -24,7 +24,7 @@ It runs in Chrome as a single self-contained page: **https://samuelling.github.i
 
 The `wow/` folder has everything the WOW needs:
 
-- `00-scratcher-control.wav`: the control tone (samples folder; mono 44.1 kHz 16-bit like the WOW's stock samples; 29 s, under the 30 s cap)
+- `00-scratcher-control.wav`: the control tone (samples folder; mono 44.1 kHz 16-bit like the WOW's stock samples; a 10 s seamless loop — a 29 s version didn't reverse cleanly on the WOW)
 - `00-scratcher-pilot.wav`: the 18 kHz pilot (beats folder; stereo 44.1 kHz like stock beats; a 10 s loop to save room in the WOW's ~2.5 min total audio budget)
 - `scratcher-mode.command`: a double-click switch between **Normal** and **Scratcher** mode. Plug the WOW into the Mac and run it. It backs up `wow_settings.txt` to `~/Scratcher-WOW`, sets `fader_left/right = beat` and zeroes delay/reverb, copies the two files, and parks your other beats and samples on the Mac by default, so they can't push the Scratcher files past the WOW's audio budget. Run it again and everything goes back exactly as it was. It also cleans macOS `._` metadata files the WOW might try to load as audio. Restart the WOW after switching. Set the WOW's beat/sample balance **fully to sample**.
 

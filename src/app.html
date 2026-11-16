@@ -233,9 +233,9 @@
 
     <div class="card">
       <h2>Control tone</h2>
-      <p class="note" style="margin-top:0">1500 Hz + phased 3rd harmonic · mono 44.1 kHz 16-bit (same format as the WOW's stock samples) · under the 30 s limit.</p>
+      <p class="note" style="margin-top:0">1500 Hz + phased 3rd harmonic · mono 44.1 kHz 16-bit (same format as the WOW's stock samples) · 10 s loop (long samples may not scratch backward cleanly on the WOW).</p>
       <div class="row">
-        <select id="toneLen"><option value="15">15 s</option><option value="29" selected>29 s</option></select>
+        <select id="toneLen"><option value="10" selected>10 s</option><option value="29">29 s</option></select>
         <button id="toneBtn">Download WAV</button>
       </div>
       <p class="note">Pilot tone (for <b>beats</b> folder, pilot-fader mode): 18 kHz · stereo 44.1 kHz · 10 s loop.</p>
