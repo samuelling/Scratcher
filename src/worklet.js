@@ -7,6 +7,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
     this.pilot = new PilotReader(sr);
     this.wowRead = 'level'; // 'level' | 'pilot'
     this.pilotRef = 0.3;
+    this.pilotGain = (f) => this.pilot.lnGain(f);
     this.eng = new ScratchEngine(sr);
     this.faderMode = 'wow';
     this.refLevel = 0.3;
@@ -90,7 +91,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
         const target = sim.hand ? sim.handV : (sim.motor ? 1 : 0);
         sim.v += (target - sim.v) * (sim.hand ? handK : motorK);
         sim.theta += 2 * Math.PI * F0 * sim.v / sr;
-        if (sim.theta > 1e6) sim.theta -= 2 * Math.PI * Math.floor(sim.theta / (2 * Math.PI));
+        const span = 2 * Math.PI * AM_CYCLES; // wrap on whole loudness periods
+        if (sim.theta > 1e6) sim.theta -= span * Math.floor(sim.theta / span);
         if (this.wowRead === 'pilot') {
           sim.ph = (sim.ph || 0) + 2 * Math.PI * PILOT_HZ / sr;
           if (sim.ph > 6.283185307179586) sim.ph -= 6.283185307179586;
@@ -101,6 +103,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
         }
       }
       const usePilot = this.wowRead === 'pilot';
+      d.gainLn = usePilot ? this.pilotGain : null;
       const cc = usePilot ? this.pilot.process(c) : c;
       const r = d.process(cc);
 
@@ -136,7 +139,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
         cal.n++;
         if (d.active) cal.active++;
         if ((cal.n & 31) === 0 && d.active && d.rawSpeed > 0) cal.speeds.push(d.rawSpeed);
-        if ((cal.n & 31) === 0 && d.active) { cal.stat += d.lastStat; cal.statN++; cal.env += d.env; cal.envN++; }
+        if ((cal.n & 31) === 0 && d.active) { cal.stat += d.dir; cal.statN++; cal.env += d.env; cal.envN++; } // mean direction while the motor runs
         if (cal.n >= cal.N) {
           const s = cal.speeds.sort((a, b) => a - b);
           const med = s.length ? s[Math.floor(s.length / 2)] : 0;

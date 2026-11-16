@@ -235,7 +235,7 @@
 
     <div class="card">
       <h2>Control tone</h2>
-      <p class="note" style="margin-top:0">1500 Hz + phased 3rd harmonic · mono 44.1 kHz 16-bit (same format as the WOW's stock samples) · 10 s loop (long samples may not scratch backward cleanly on the WOW).</p>
+      <p class="note" style="margin-top:0">1500 Hz carrier with a sawtooth-like loudness pattern (direction is read from loudness — the WOW keeps fine waveform shape forward even in reverse) · mono 44.1 kHz 16-bit · 10 s loop.</p>
       <div class="row">
         <select id="toneLen"><option value="10" selected>10 s</option><option value="29">29 s</option></select>
         <button id="toneBtn">Download WAV</button>
@@ -251,6 +251,9 @@
 (() => {
 'use strict';
 const $ = (id) => document.getElementById(id);
+const AM_CYCLES = 60, AM_LN = Math.log(0.35), AM_RISE = 0.8; // mirror of dsp.js
+function toneLogAmp(theta) { let u = theta / (2 * Math.PI * AM_CYCLES); u -= Math.floor(u);
+  return u < AM_RISE ? AM_LN * (1 - u / AM_RISE) : AM_LN * (u - AM_RISE) / (1 - AM_RISE); }
 const store = {
   get(k, d) { try { const v = localStorage.getItem('scratcher.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('scratcher.' + k, JSON.stringify(v)); } catch (e) {} },
@@ -730,10 +733,13 @@ function wavDownload(name, sr, ch, n, sampleAt) {
 }
 // Formats match the WOW's own stock files: samples mono 44.1 kHz, beats stereo 44.1 kHz, 16-bit.
 $('toneBtn').addEventListener('click', () => {
+  // Pure 1500 Hz carrier with a lopsided-triangle loudness envelope (rise 32 ms / fall 8 ms of file).
+  // 10 s = 250 whole envelope periods → seamless loop. Same formula as toneSample() in dsp.js.
   const secs = parseInt($('toneLen').value, 10), sr = 44100;
-  const per = new Int16Array(441); // 441 samples = exactly 15 cycles of 1500 Hz → seamless loop
-  for (let i = 0; i < 441; i++) { const th = 2 * Math.PI * 1500 * i / sr; per[i] = Math.round((Math.cos(th) + 0.3 * Math.cos(3 * th + Math.PI / 2)) / 1.25 * 0.89 * 32767); }
-  wavDownload('00-scratcher-control.wav', sr, 1, sr * secs, i => per[i % 441]);
+  wavDownload('00-scratcher-control.wav', sr, 1, sr * secs, i => {
+    const th = 2 * Math.PI * 1500 * i / sr;
+    return Math.round(Math.exp(toneLogAmp(th)) * Math.sin(th) * 0.89 * 32767);
+  });
 });
 $('pilotBtn').addEventListener('click', () => {
   const sr = 44100; // 49 samples = exactly 20 cycles of 18 kHz → seamless loop

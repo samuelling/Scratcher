@@ -4,164 +4,96 @@
 //  • E[x·d³] (d = derivative) flips sign with direction, is invariant to gain, speed and polarity
 
 const F0 = 1500;
-const A3 = 0.3;
+const A3 = 0;
 const TONE_PEAK = 0.89; // linear peak used when rendering the tone file
+// Loudness envelope = lopsided triangle in log-amplitude: rises over 80% of 60 cycles (32 ms of file),
+// falls over 20% (8 ms). The WOW plays reverse with forward-running fine structure, so direction
+// is read from the loudness trend (slow vs fast, rising vs falling), never from waveform shape.
+const AM_CYCLES = 60, AM_LN = Math.log(0.35), AM_RISE = 0.8;
+const AM_SLOPE = -AM_LN / (AM_RISE * AM_CYCLES / F0);   // ln-units per second of file during the rise
 
+function toneLogAmp(theta) {
+  let u = theta / (2 * Math.PI * AM_CYCLES); u -= Math.floor(u);
+  return u < AM_RISE ? AM_LN * (1 - u / AM_RISE) : AM_LN * (u - AM_RISE) / (1 - AM_RISE);
+}
 function toneSample(theta) {
-  return (Math.cos(theta) + A3 * Math.cos(3 * theta + Math.PI / 2)) / 1.25;
+  return Math.exp(toneLogAmp(theta)) * Math.sin(theta);
 }
 
 class ToneDecoder {
+  // Speed: median zero-crossing interval. Direction: loudness trend vs. the expected rise slope.
   constructor(sr) {
-    this.sr = sr;
-    this.calib = 1;          // measured 1x speed ratio of the WOW
-    this.flip = false;
-    this.gate = 0.0015;      // absolute noise gate on the control input
-    this.hpA = Math.exp(-2 * Math.PI * 8 / sr);
-    this.hpX = 0; this.hpY = 0;
-    this.prev = 0;
-    this.env = 0;
-    this.n = 0;
-    this.state = 0;          // Schmitt state +1 / -1
-    this.pendingZC = -1;
-    this.lastTc = -1;
-    this.halfT = Infinity;
-    this.dir = 1;
-    this.dirScore = 1;
-    this.lastStat = 0;
-    this.active = false;
-    this.sxd3 = 0; this.sx2 = 0; this.sd2 = 0; this.cnt = 0; this.lobePeak = 0;
-    this.hwPeak = 0; this.hw1 = 0; this.hw2 = 0;
-    this.lxd3 = 0; this.lx2 = 0; this.ld2 = 0; this.lcnt = 0;
-    this.turnarounds = 0; this.prevLobePeak = 0;
-    this.posExact = 0;
-    this.posInt = 0;
-    this.v = 0;              // per-sample rate output (1 = normal speed)
-    this.rawSpeed = 0;       // unsigned, uncalibrated (for calibration)
+    this.sr = sr; this.calib = 1; this.flip = false; this.gate = 0.0015;
+    this.hpA = Math.exp(-2 * Math.PI * 8 / sr); this.hpX = 0; this.hpY = 0;
+    this.prev = 0; this.env = 0; this.n = 0;
+    this.state = 0; this.pendingZC = -1; this.lastTc = -1;
+    this.halves = [Infinity, Infinity, Infinity, Infinity, Infinity]; this.halfT = Infinity;
+    this.dir = 1; this.cand = 1; this.candN = 0; this.lastStat = 0; this.active = false;
+    this.RING = 16384; this.Q = new Float64Array(this.RING); this.Lr = new Float32Array(this.RING); this.qAcc = 0;
+    this.posInt = 0; this.v = 0; this.rawSpeed = 0;
+    this.gainLn = null; this.gainCorr = 0; // optional: ln|H(f)| of any known filter ahead of the decoder
   }
-
   get H1() { return this.sr / (2 * F0 * this.calib); }
-
-  resetLobe() { this.sxd3 = 0; this.sx2 = 0; this.sd2 = 0; this.cnt = 0; this.lobePeak = 0; this.lxd3 = 0; this.lx2 = 0; this.ld2 = 0; this.lcnt = 0; }
-
   process(xin) {
-    const n = this.n++;
-    // DC / rumble removal
-    const y = this.hpA * (this.hpY + xin - this.hpX);
-    this.hpX = xin; this.hpY = y;
+    const n = this.n++, M = this.RING - 1;
+    const y = this.hpA * (this.hpY + xin - this.hpX); this.hpX = xin; this.hpY = y;
     const prev = this.prev; this.prev = y;
-    const d = y - prev;
-    const ay = Math.abs(y);
-
-    // envelope: peak follower whose release scales with the tone period
     const relT = Math.max(0.0015 * this.sr, 2.5 * Math.min(this.halfT, 0.04 * this.sr));
-    this.env = Math.max(ay, this.env * Math.exp(-1 / relT));
-
-    const wasActive = this.active;
+    this.env = Math.max(Math.abs(y), this.env * Math.exp(-1 / relT));
+    if (this.qAcc > 1e6) { for (let i = 0; i < this.RING; i++) this.Q[i] -= this.qAcc; this.qAcc = 0; }
+    this.qAcc += y * y; this.Q[n & M] = this.qAcc;
     this.active = this.env > this.gate;
     if (!this.active) {
-      this.state = 0;
-      this.resetLobe();
-      this.lastTc = -1;
-      this.halfT = Infinity;
-      this.v = 0;
-      this.rawSpeed = 0;
-      return 0;
+      this.state = 0; this.lastTc = -1; this.halves.fill(Infinity); this.halfT = Infinity;
+      this.v = 0; this.rawSpeed = 0; this.Lr[n & M] = -30; return 0;
     }
-    if (!wasActive) this.resetLobe();
-
-    // lobe statistics
-    const ym = 0.5 * (y + prev); // align signal with the half-sample derivative
-    // leaky moments spanning a few lobes (phase-averaged even when a lobe is only ~4 samples)
-    const tauS = Math.max(24, Math.min(1.5 * (this.halfT === Infinity ? 32 : this.halfT), 0.003 * this.sr));
-    const lk = Math.exp(-1 / tauS);
-    this.sxd3 = this.sxd3 * lk + ym * d * d * d;
-    this.sx2 = this.sx2 * lk + ym * ym;
-    this.sd2 = this.sd2 * lk + d * d;
-    this.cnt = this.cnt * lk + 1;
-    this.lxd3 += ym * d * d * d; this.lx2 += ym * ym; this.ld2 += d * d; this.lcnt++;
-    if (ay > this.lobePeak) this.lobePeak = ay;
-
-    // true zero crossing time (sub-sample)
-    if ((prev <= 0 && y > 0) || (prev >= 0 && y < 0)) {
-      const den = prev - y;
-      this.pendingZC = (n - 1) + (den !== 0 ? prev / den : 0);
-      this.hw2 = this.hw1; this.hw1 = this.hwPeak; this.hwPeak = 0;
-    }
-    if (ay > this.hwPeak) this.hwPeak = ay;
-
-    // Schmitt confirmation; threshold follows the last two half-wave peaks so it
-    // recovers within a cycle after a fader cut
-    const thr = Math.max(0.5 * this.gate, 0.22 * Math.min(this.env, Math.max(this.hw1, this.hwPeak)));
+    if ((prev <= 0 && y > 0) || (prev >= 0 && y < 0)) { const den = prev - y; this.pendingZC = (n - 1) + (den !== 0 ? prev / den : 0); }
+    const thr = 0.2 * this.env;
     let confirmed = false;
     if (this.state !== 1 && y > thr) { this.state = 1; confirmed = true; }
     else if (this.state !== -1 && y < -thr) { this.state = -1; confirmed = true; }
-
     if (confirmed && this.pendingZC >= 0) {
-      const tc = this.pendingZC;
-      const H1 = this.H1;
-      const momentStat = (xd3, x2, d2, N) => {
-        if (N < 3 || d2 <= 0 || x2 <= 0) return 0;
-        let st = (xd3 / N) / (Math.sqrt(x2 / N) * Math.pow(d2 / N, 1.5)) / 0.47; // ≈ ±1 clean
-        return this.flip ? -st : st;
-      };
-      const statLeaky = momentStat(this.sxd3, this.sx2, this.sd2, this.cnt);
-      const statLobe = momentStat(this.lxd3, this.lx2, this.ld2, this.lcnt);
-      let stat = statLeaky;
       if (this.lastTc >= 0) {
-        let half = tc - this.lastTc;
+        const half = this.pendingZC - this.lastTc;
         if (half > 0.25) {
-          const longLobe = this.lcnt >= 10;
-          const pk = this.lobePeak, ppk = this.prevLobePeak || pk;
-          const levelJump = pk < 0.3 * ppk || pk > 3.3 * ppk;
-          if (levelJump && this.halfT !== Infinity && half > 1.7 * this.halfT) {
-            // fader cut/open: threshold lagged and skipped marks — count them (odd multiples)
-            const k = 2 * Math.round((half / this.halfT - 1) / 2) + 1;
-            if (stat > 0.2) this.dir = 1; else if (stat < -0.2) this.dir = -1;
-            this.posExact += this.dir * H1 * Math.min(k, 9);
-            half = half / k;
-          } else if (!levelJump && longLobe && Math.abs(statLobe) < 0.6 && this.halfT !== Infinity && half > 1.3 * this.halfT) {
-            // turnaround: the needle re-crossed the same mark — net travel 0, direction flips
-            this.dir = -this.dir;
-            this.turnarounds++;
-            this.sxd3 = 0; this.sx2 = 0; this.sd2 = 0; this.cnt = 0;
-            stat = 0;
-          } else {
-            if (longLobe) stat = statLobe;
-            if (stat > 0.2) this.dir = 1;
-            else if (stat < -0.2) this.dir = -1;
-            this.posExact += this.dir * H1;
-          }
-          this.halfT = half;
-          this.rawSpeed = (this.sr / (2 * F0)) / half;
+          this.halves.shift(); this.halves.push(half);
+          const h = this.halves.filter(isFinite).sort((a, b) => a - b);
+          this.halfT = h[h.length >> 1];
+          this.rawSpeed = (this.sr / (2 * F0)) / this.halfT;
         }
       }
-      this.lastStat = stat;
-      this.prevLobePeak = this.lobePeak; this.lobePeak = 0;
-      this.lxd3 = 0; this.lx2 = 0; this.ld2 = 0; this.lcnt = 0;
-      this.lastTc = tc;
+      this.lastTc = this.pendingZC;
     }
-
-    // speed between crossings (decays if the next crossing is late)
     let vmag = 0;
     if (this.lastTc >= 0 && this.halfT !== Infinity) {
       const tau = n - this.lastTc;
       vmag = this.H1 / Math.max(this.halfT, tau);
       if (tau > 0.12 * this.sr) vmag = 0;
     }
-    const vEst = this.dir * vmag;
-
-    // integrate velocity, softly pulled toward the interpolated groove position,
-    // and never more than two half-cycles from the last confirmed mark
-    const before = this.posInt;
-    const H1 = this.H1;
-    let pred = this.posExact;
-    if (this.lastTc >= 0 && this.halfT !== Infinity) pred += this.dir * H1 * Math.min(1, (n - this.lastTc) / this.halfT);
-    let p = before + vEst + (pred - before) * 0.004;
-    if (p > this.posExact + 2 * H1) p = this.posExact + 2 * H1;
-    if (p < this.posExact - 2 * H1) p = this.posExact - 2 * H1;
-    this.posInt = p;
-    this.v = p - before;
+    // loudness over exactly one carrier period (ripple-free), in log units
+    const W = Math.max(8, Math.min(4096, Math.round(this.halfT === Infinity ? 64 : 2 * this.halfT)));
+    const E = n >= W ? (this.qAcc - this.Q[(n - W) & M]) / W : y * y;
+    if (this.gainLn && (n & 15) === 0) this.gainCorr = vmag > 0 ? this.gainLn(F0 * this.calib * vmag) : 0;
+    const L = 0.5 * Math.log(E + 1e-14) - this.gainCorr; this.Lr[n & M] = L;
+    // trend over D samples, compared with the slope a forward rise would have at this speed
+    const D = Math.min(8192, Math.max(2 * W, Math.round(0.001 * this.sr)));
+    if (n >= D + W && vmag > 0.06) {
+      const diff = L - this.Lr[(n - D) & M];
+      const expct = AM_SLOPE * vmag * D / this.sr;
+      let r = diff / expct; if (this.flip) r = -r;
+      this.lastStat = r;
+      let verdict = 0;
+      if (r > 0.35 && r < 2.0) verdict = 1;        // slow rise  → forward
+      else if (r < -0.35 && r > -2.0) verdict = -1; // slow fall  → backward
+      else if (r < -2.6) verdict = 1;               // fast fall  → forward
+      else if (r > 2.6) verdict = -1;               // fast rise  → backward
+      if (verdict !== 0) {
+        if (verdict === this.cand) this.candN++; else { this.cand = verdict; this.candN = 1; }
+        if (this.candN >= Math.round(1.0 * D)) this.dir = this.cand;  // outlast a window straddling a rise/fall switch
+      }
+    }
+    this.v = this.dir * vmag;
+    this.posInt += this.v;
     return this.v;
   }
 }
@@ -282,7 +214,7 @@ function faderCurve(level, lo, hi) {
   return t * t * (3 - 2 * t);
 }
 
-if (typeof module !== 'undefined') module.exports = { F0, A3, TONE_PEAK, toneSample, ToneDecoder, ScratchEngine, faderCurve };
+if (typeof module !== 'undefined') module.exports = { F0, A3, AM_CYCLES, toneLogAmp, TONE_PEAK, toneSample, ToneDecoder, ScratchEngine, faderCurve };
 
 // ---- Pilot-tone fader reader --------------------------------------------------
 // The WOW's fader is set to cut the BEAT only; the beat is a steady pilot tone
@@ -302,6 +234,13 @@ class Biquad {
   highpass(sr, f, q) {
     const w = 2 * Math.PI * f / sr, al = Math.sin(w) / (2 * q), c = Math.cos(w), a0 = 1 + al;
     this.b0 = (1 + c) / 2 / a0; this.b1 = -(1 + c) / a0; this.b2 = (1 + c) / 2 / a0; this.a1 = -2 * c / a0; this.a2 = (1 - al) / a0; return this;
+  }
+  // natural-log magnitude response at f Hz
+  lnMag(sr, f) {
+    const w = 2 * Math.PI * f / sr, c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+    const nr = this.b0 + this.b1 * c1 + this.b2 * c2, ni = -(this.b1 * s1 + this.b2 * s2);
+    const dr = 1 + this.a1 * c1 + this.a2 * c2, di = -(this.a1 * s1 + this.a2 * s2);
+    return 0.5 * Math.log((nr * nr + ni * ni) / (dr * dr + di * di) + 1e-20);
   }
   process(x) { // transposed direct form II
     const y = this.b0 * x + this.z1;
@@ -350,6 +289,7 @@ class PilotReader {
     if (this.mode === 'notch') return this.n2.process(this.n1.process(x));
     return this.lp[2].process(this.lp[1].process(this.lp[0].process(x)));
   }
+  lnGain(f) { return this.n1.lnMag(this.sr, f) + this.n2.lnMag(this.sr, f); }
   resetMeasure() { this.zc = 0; this.hpN = 0; this.hpSq = 0; }
   measured() { return { hz: this.hpN ? this.zc * this.sr / this.hpN : 0, amp: this.hpN ? Math.sqrt(2 * this.hpSq / this.hpN) : 0 }; }
 }

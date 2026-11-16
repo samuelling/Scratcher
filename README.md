@@ -14,19 +14,15 @@ It runs in Chrome as a single self-contained page: **https://samuelling.github.i
   - **Tone level.** The fader cuts the control tone itself. It's simpler, but platter motion is invisible while the fader is closed.
 - **Virtual fader.** An on-screen cut fader with cut-in, curve and hamster settings, used alone or together with the WOW's fader.
 
-## The control tone (mono)
+## The control tone
 
-`s(θ) = cos θ + 0.3·cos(3θ + 90°)` at 1500 Hz.
+A 1500 Hz sine whose **loudness** follows a lopsided triangle (in log amplitude): it rises over 32 ms of file and falls over 8 ms, repeating 250 times over a 10 s seamless loop.
 
-- **Speed** comes from zero-crossing timing (two crossings per cycle, sub-sample interpolated).
-- **Direction** comes from the sign of `E[x·(dx/dt)³]`. It flips when the platter reverses, it's independent of gain and speed, and because only odd harmonics are present it's **unaffected by polarity inversion** anywhere in the signal chain.
-- **Turnarounds** are caught as a mirror-symmetric lobe (statistic ≈ 0) and counted as zero net travel. That keeps baby scratches and scribbles from drifting.
+- **Speed** comes from zero-crossing timing (median of recent half-periods).
+- **Direction** comes from the loudness trend. A slow rise or a fast fall means forward; a slow fall or a fast rise means backward. The rate is compared with what's expected at the current speed. The loudness is measured over exactly one carrier cycle, so the carrier's own ripple cancels.
+- **Why loudness, not waveform shape:** diagnostic recordings showed that the WOW plays reverse with the fine waveform still running *forward*. File position goes backward smoothly, but every millisecond-scale snippet is forward-shaped. Any shape-based scheme (a phased harmonic, a sawtooth waveform) therefore always reads "forward" on the WOW. Loudness follows file position, so it reverses correctly. The cost is about 10–15 ms of direction latency at turnarounds.
 
-The `wow/` folder has everything the WOW needs:
-
-- `00-scratcher-control.wav`: the control tone (samples folder; mono 44.1 kHz 16-bit like the WOW's stock samples; a 10 s seamless loop — a 29 s version didn't reverse cleanly on the WOW)
-- `00-scratcher-pilot.wav`: the 18 kHz pilot (beats folder; stereo 44.1 kHz like stock beats; a 10 s loop to save room in the WOW's ~2.5 min total audio budget)
-- `scratcher-mode.command`: a double-click switch between **Normal** and **Scratcher** mode. Plug the WOW into the Mac and run it. It backs up `wow_settings.txt` to `~/Scratcher-WOW`, sets `fader_left/right = beat` and zeroes delay/reverb, copies the two files, and parks your other beats and samples on the Mac by default, so they can't push the Scratcher files past the WOW's audio budget. Run it again and everything goes back exactly as it was. It also cleans macOS `._` metadata files the WOW might try to load as audio. Restart the WOW after switching. Set the WOW's beat/sample balance **fully to sample**.
+`test/test_wow.js` checks the decoder against both true reverse and WOW-style reverse.
 
 ## Setup
 
@@ -43,7 +39,7 @@ To try it without the WOW, set the control source to **Virtual platter** and dra
 src/dsp.js      decoder + scratch engine (shared by the worklet and the tests)
 src/worklet.js  AudioWorklet processor
 src/app.html    UI; build.py inlines the DSP into index.html
-test/           node test/test.js — decoder accuracy; test_pilot.js — tracking through pilot-fader cuts
+test/           test_wow.js: accuracy under true and WOW-style reverse; test_pilot.js: tracking through pilot-fader cuts; test_engine.js
 ```
 
 Run `python3 build.py` after editing anything in `src/`.
