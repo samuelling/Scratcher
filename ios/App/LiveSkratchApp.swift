@@ -67,7 +67,7 @@ struct RoutingCard: View {
             }
             HStack {
                 Text("Output to").frame(width: 150, alignment: .leading)
-                Picker("Output to", selection: model.binding(\.outPair)) {
+                Picker("Output to", selection: clamped(\.outPair, host.outputPairNames.count)) {
                     ForEach(Array(host.outputPairNames.enumerated()), id: \.offset) { i, n in Text(n).tag(i) }
                 }.labelsHidden()
                 Spacer()
@@ -78,10 +78,16 @@ struct RoutingCard: View {
         }
     }
 
+    /// A picker selection that always names an existing row (saved choices can outnumber the current device's channels).
+    func clamped(_ kp: WritableKeyPath<ScratcherSettings, Int>, _ count: Int) -> Binding<Int> {
+        let b = model.binding(kp)
+        return Binding(get: { min(b.wrappedValue, max(0, count - 1)) }, set: { b.wrappedValue = $0 })
+    }
+
     func channelPicker(_ label: String, _ kp: WritableKeyPath<ScratcherSettings, Int>) -> some View {
         HStack {
             Text(label).frame(width: 150, alignment: .leading)
-            Picker(label, selection: model.binding(kp)) {
+            Picker(label, selection: clamped(kp, host.inputChannelNames.count)) {
                 ForEach(Array(host.inputChannelNames.enumerated()), id: \.offset) { i, n in Text("\(i + 1): \(n)").tag(i) }
             }.labelsHidden()
             Spacer()

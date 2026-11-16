@@ -26,7 +26,11 @@ final class AppHost: ObservableObject, ScratcherHost {
     private let loops = LoopSlot()
     private var au: AUAudioUnit?
     private var pull: AURenderBlock?
-    private var inBuf: AVAudioPCMBuffer?
+    /// Input buffers owned by us (AVAudioPCMBuffer's buffer-list getter resets the byte sizes, which made every pull fail).
+    private var inABL: UnsafeMutableAudioBufferListPointer?
+    private var inStore: UnsafeMutablePointer<Float>?
+    private var inChans: [UnsafeMutablePointer<Float>] = []
+    private let audioQueue = DispatchQueue(label: "liveskratch.audio-setup", qos: .userInitiated)
     private let maxFrames = 4096
     private let outL: UnsafeMutablePointer<Float>, outR: UnsafeMutablePointer<Float>
     // render-thread copies of the routing (plain Ints)
@@ -55,7 +59,7 @@ final class AppHost: ObservableObject, ScratcherHost {
             self?.restart()
         })
     }
-    deinit { stop(); outL.deallocate(); outR.deallocate() }
+    deinit { au?.stopHardware(); au?.deallocateRenderResources(); freeInput(); outL.deallocate(); outR.deallocate() }
 
     // MARK: loop
 
@@ -82,12 +86,24 @@ final class AppHost: ObservableObject, ScratcherHost {
 
     // MARK: start / stop
 
+    /// Audio session and unit setup can block for a while, so it runs on its own queue, never the main thread.
     func start() {
         if AVAudioApplication.shared.recordPermission == .undetermined {
             AVAudioApplication.requestRecordPermission { [weak self] _ in DispatchQueue.main.async { self?.start() } }
             return
         }
         let micOK = AVAudioApplication.shared.recordPermission == .granted
+        audioQueue.async { [weak self] in self?.startOnQueue(micOK: micOK) }
+    }
+    func stop() { audioQueue.async { [weak self] in self?.stopOnQueue() } }
+    func restart() {
+        let micOK = AVAudioApplication.shared.recordPermission == .granted
+        audioQueue.async { [weak self] in self?.stopOnQueue(); self?.startOnQueue(micOK: micOK) }
+    }
+    private func onMain(_ f: @escaping () -> Void) { DispatchQueue.main.async(execute: f) }
+
+    private func startOnQueue(micOK: Bool) {
+        if au != nil { return }
         let s = AVAudioSession.sharedInstance()
         do {
             try s.setCategory(micOK ? .playAndRecord : .playback, mode: .measurement,
@@ -98,13 +114,16 @@ final class AppHost: ObservableObject, ScratcherHost {
             if micOK { try? s.setPreferredInputNumberOfChannels(s.maximumInputNumberOfChannels) }
             try? s.setPreferredOutputNumberOfChannels(s.maximumOutputNumberOfChannels)
         } catch {
-            problem = "Audio session: \(error.localizedDescription)"; return
+            let m = "Audio session: \(error.localizedDescription)"
+            onMain { self.problem = m }; return
         }
         let sr = s.sampleRate
-        if abs(sr - processor.sr) > 1 {
-            processor = Processor(sr: sr)
-            settings.apply(to: processor)
-            loadLoop()
+        DispatchQueue.main.sync {        // the UI reads the processor, so it is only ever swapped on the main thread
+            if abs(sr - self.processor.sr) > 1 {
+                self.processor = Processor(sr: sr)
+                self.settings.apply(to: self.processor)
+                self.loadLoop()
+            }
         }
         inCh = micOK ? s.inputNumberOfChannels : 0
         outCh = max(1, s.outputNumberOfChannels)
@@ -115,8 +134,8 @@ final class AppHost: ObservableObject, ScratcherHost {
             if inCh > 0, let f = AppHost.format(sr, inCh) {
                 try unit.outputBusses[1].setFormat(f)          // bus 1 out = audio from the inputs, to us
                 unit.isInputEnabled = true
-                inBuf = AVAudioPCMBuffer(pcmFormat: f, frameCapacity: AVAudioFrameCount(maxFrames))
-            } else { unit.isInputEnabled = false; inBuf = nil }
+                allocateInput(channels: inCh)
+            } else { unit.isInputEnabled = false; freeInput() }
             if let f = AppHost.format(sr, outCh) { try unit.inputBusses[0].setFormat(f) }   // bus 0 in = our audio, to the outputs
             unit.isOutputEnabled = true
             unit.maximumFramesToRender = AUAudioFrameCount(maxFrames)
@@ -125,37 +144,53 @@ final class AppHost: ObservableObject, ScratcherHost {
             }
             try unit.allocateRenderResources()
             pull = unit.renderBlock
+            let settingsNow = DispatchQueue.main.sync { self.settings }
+            updateRouting(settingsNow)
             try unit.startHardware()
             au = unit
-            running = true
-            problem = nil
+            onMain { self.running = true; self.problem = nil }
         } catch {
-            problem = "Couldn't start audio: \(error.localizedDescription)"
-            running = false
+            let m = "Couldn't start audio: \(error.localizedDescription)"
+            onMain { self.problem = m; self.running = false }
         }
-        describeRoute(micOK: micOK)
-        updateRouting()
+        let route = describeRoute(micOK: micOK)
+        onMain {
+            self.inputChannelNames = route.ins; self.outputPairNames = route.outs; self.routeDescription = route.text
+        }
     }
 
-    func stop() {
+    private func stopOnQueue() {
         au?.stopHardware()
         au?.deallocateRenderResources()
         au = nil; pull = nil
-        running = false
+        onMain { self.running = false }
     }
-    func restart() { stop(); start() }
+
+    private func allocateInput(channels n: Int) {
+        freeInput()
+        let store = UnsafeMutablePointer<Float>.allocate(capacity: n * maxFrames)
+        store.initialize(repeating: 0, count: n * maxFrames)
+        inStore = store
+        inChans = (0..<n).map { store + $0 * maxFrames }
+        inABL = AudioBufferList.allocate(maximumBuffers: n)
+    }
+    private func freeInput() {
+        inChans = []
+        if let l = inABL { free(l.unsafeMutablePointer) }; inABL = nil
+        inStore?.deallocate(); inStore = nil
+    }
 
     static func format(_ sr: Double, _ ch: Int) -> AVAudioFormat? {
         guard let layout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | UInt32(ch)) else { return nil }
         return AVAudioFormat(standardFormatWithSampleRate: sr, channelLayout: layout)
     }
 
-    private func describeRoute(micOK: Bool) {
+    private func describeRoute(micOK: Bool) -> (ins: [String], outs: [String], text: String) {
         let r = AVAudioSession.sharedInstance().currentRoute
         var names: [String] = []
         for port in r.inputs { for c in port.channels ?? [] { names.append(c.channelName) } }
         while names.count < inCh { names.append("Input \(names.count + 1)") }
-        inputChannelNames = Array(names.prefix(inCh))
+        let insOut = Array(names.prefix(inCh))
         var outs: [String] = []
         for port in r.outputs { for c in port.channels ?? [] { outs.append(c.channelName) } }
         while outs.count < outCh { outs.append("Output \(outs.count + 1)") }
@@ -164,20 +199,21 @@ final class AppHost: ObservableObject, ScratcherHost {
         while i < outCh {
             pairs.append(i + 1 < outCh ? "\(i + 1)–\(i + 2): \(outs[i]) / \(outs[i + 1])" : "\(i + 1): \(outs[i])"); i += 2
         }
-        outputPairNames = pairs
         let ins = r.inputs.map(\.portName).joined(separator: ", "), outn = r.outputs.map(\.portName).joined(separator: ", ")
         let s = AVAudioSession.sharedInstance()
-        routeDescription = String(format: "In: %@ (%ld ch) · Out: %@ (%ld ch) · %.0f kHz · %.1f ms buffer",
+        let text = String(format: "In: %@ (%ld ch) · Out: %@ (%ld ch) · %.0f kHz · %.1f ms buffer",
                                   micOK ? (ins.isEmpty ? "none" : ins) : "microphone access off", inCh,
                                   outn, outCh, s.sampleRate / 1000, s.ioBufferDuration * 1000)
+        return (insOut, pairs, text)
     }
 
-    private func updateRouting() {
+    private func updateRouting(_ st: ScratcherSettings? = nil) {
+        let st = st ?? settings
         let last = max(0, inCh - 1)
-        rCtrl = min(settings.ctrlChannel, last)
-        rLiveL = min(settings.liveLeft, last)
-        rLiveR = min(settings.liveRight, last)
-        rPair = min(settings.outPair, max(0, (outCh - 1) / 2))
+        rCtrl = min(st.ctrlChannel, last)
+        rLiveL = min(st.liveLeft, last)
+        rLiveR = min(st.liveRight, last)
+        rPair = min(st.outPair, max(0, (outCh - 1) / 2))
     }
 
     // MARK: render (audio thread)
@@ -186,15 +222,19 @@ final class AppHost: ObservableObject, ScratcherHost {
                         _ frames: AUAudioFrameCount, _ data: UnsafeMutablePointer<AudioBufferList>) -> AUAudioUnitStatus {
         let n = min(Int(frames), maxFrames)
         var ctrl: UnsafePointer<Float>? = nil, liveL: UnsafePointer<Float>? = nil, liveR: UnsafePointer<Float>? = nil
-        if inCh > 0, let ib = inBuf, let pull, let ch = ib.floatChannelData {
-            let list = UnsafeMutableAudioBufferListPointer(ib.mutableAudioBufferList)
-            for i in 0..<list.count {
-                list[i].mData = UnsafeMutableRawPointer(ch[i])
+        if inCh > 0, let list = inABL, let pull, inChans.count == inCh {
+            for i in 0..<inCh {
+                list[i].mNumberChannels = 1
+                list[i].mData = UnsafeMutableRawPointer(inChans[i])
                 list[i].mDataByteSize = UInt32(n * MemoryLayout<Float>.size)
             }
             var pf = AudioUnitRenderActionFlags()
-            if pull(&pf, ts, AUAudioFrameCount(n), 1, ib.mutableAudioBufferList, nil) == noErr {
-                ctrl = UnsafePointer(ch[rCtrl]); liveL = UnsafePointer(ch[rLiveL]); liveR = UnsafePointer(ch[rLiveR])
+            if pull(&pf, ts, AUAudioFrameCount(n), 1, list.unsafeMutablePointer, nil) == noErr {
+                // the unit may hand back its own buffers
+                func ch(_ i: Int) -> UnsafePointer<Float> {
+                    UnsafePointer(list[i].mData?.assumingMemoryBound(to: Float.self) ?? inChans[i])
+                }
+                ctrl = ch(rCtrl); liveL = ch(rLiveL); liveR = ch(rLiveR)
             }
         }
         processor.render(frames: n, ctrl: ctrl, liveL: liveL, liveR: liveR, outL: outL, outR: outR)
