@@ -11,9 +11,14 @@ struct ScratcherTabs<Setup: View>: View {
     var problem: String? = nil
     @ViewBuilder var setup: Setup
 
+    @State private var helpTopic: HelpTopic? = nil
+    @State private var walkthrough = false
+    @AppStorage("liveskratch.seenWalkthrough") private var seenWalkthrough = false
+    private var isPlugin: Bool { model.host?.isPlugin ?? false }
+
     var body: some View {
         TabView {
-            PlayView(model: model, problem: problem)
+            PlayView(model: model, problem: problem, onHelp: { helpTopic = .scratch })
                 .tabItem { Label("Scratch", systemImage: "opticaldisc") }
             NavigationStack {
                 Form {
@@ -23,6 +28,7 @@ struct ScratcherTabs<Setup: View>: View {
                     DiagnosticsSection(model: model)
                 }
                 .navigationTitle("Setup")
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { HelpButton { helpTopic = .setup } } }
             }
             .tabItem { Label("Setup", systemImage: "cable.connector") }
             NavigationStack {
@@ -32,11 +38,22 @@ struct ScratcherTabs<Setup: View>: View {
                     FeelSection(model: model)
                 }
                 .navigationTitle("Feel")
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { HelpButton { helpTopic = .feel } } }
             }
             .tabItem { Label("Feel", systemImage: "slider.horizontal.3") }
         }
         .tint(accent)
         .preferredColorScheme(.dark)
+        .sheet(item: $helpTopic) { topic in
+            HelpSheet(topic: topic, plugin: isPlugin, onWalkthrough: {
+                helpTopic = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { walkthrough = true }
+            })
+        }
+        .fullScreenCover(isPresented: $walkthrough) {
+            WalkthroughView(model: model) { walkthrough = false; seenWalkthrough = true }
+        }
+        .onAppear { if !seenWalkthrough && !isPlugin { walkthrough = true } }
     }
 }
 
@@ -45,6 +62,7 @@ struct ScratcherTabs<Setup: View>: View {
 struct PlayView: View {
     @ObservedObject var model: ScratcherModel
     var problem: String?
+    var onHelp: () -> Void = {}
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -80,7 +98,11 @@ struct PlayView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("LiveSkratch").font(.title2.weight(.heavy))
+            HStack {
+                Text("LiveSkratch").font(.title2.weight(.heavy))
+                Spacer()
+                HelpButton(action: onHelp).tint(accent)
+            }
             HStack(spacing: 6) {
                 let s = model.state
                 Pill(on: s.active, text: s.active ? "Tone" : "No tone", color: s.active ? .green : .orange)
