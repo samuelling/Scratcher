@@ -54,6 +54,40 @@ for (name, f, dur, lim) in gestures {
     check(a.0 < lim && b.0 < lim, "\(name) position error under \(lim) ms")
 }
 
+let qtrace = ProcessInfo.processInfo.environment["QTRACE"] != nil
+print("== stereo timecode (15% L/R imbalance, 10° phase error, ±20% bit AM, calibrated gate)")
+func runQuad(_ vf: (Double) -> Double, _ dur: Double, carrier: Double) -> (Double, Double) {
+    let d = QuadDecoder(sr: SR); d.carrierHz = carrier; d.gate = 0.03
+    var th = 0.0, truth = 0.0, p0 = 0.0, t0 = 0.0, maxE = 0.0, bad = 0, n1 = 0, amp = 1.0, cyc = 0.0
+    let warm = Int(0.2 * SR)
+    for n in 0..<(Int(dur * SR) + warm) {
+        let v = n < warm ? 1 : vf(Double(n - warm) / SR)
+        th += 2 * .pi * carrier * v / SR
+        let cc = (th / (2 * .pi)).rounded(.down)
+        if cc != cyc { cyc = cc; amp = 1 + 0.2 * (noise() > 0 ? 1 : -1) }
+        _ = d.process(0.3 * amp * cos(th) + noise() * 4e-3, 0.3 * amp * 0.85 * sin(th + 0.17) + noise() * 4e-3)
+        truth += v
+        if n == warm { p0 = d.posInt; t0 = truth }
+        if n > warm {
+            maxE = max(maxE, abs((d.posInt - p0) - (truth - t0)))
+            if abs(v) > 0.1 { n1 += 1; if d.dir != (v > 0 ? 1 : -1) { bad += 1 } }
+            if qtrace && carrier == 2000 && dur == 2.5 && (n - warm) % 2400 == 0 {
+                print(String(format: "    t=%.2f v=%.2f dv=%.3f err %.2f ms act %d env %.4f", Double(n - warm) / SR, v, d.v, ((d.posInt - p0) - (truth - t0)) / SR * 1000, d.active ? 1 : 0, d.env))
+            }
+        }
+    }
+    return (maxE / SR * 1000, 100 * Double(bad) / Double(max(1, n1)))
+}
+let slowGestures: [(String, (Double) -> Double, Double, Double)] = [
+    ("creep 0.05x", { t in t < 0.3 ? 1 : 0.05 }, 2.5, 0), ("inch ±0.03", { t in 0.03 * (sin(2 * .pi * 0.5 * t) >= 0 ? 1 : -1) }, 3, 0)]
+for carrier in [1000.0, 2000.0] {
+    for (name, f, dur, _) in gestures + slowGestures {
+        let a = runQuad(f, dur, carrier: carrier)
+        print(String(format: "  %4.0f Hz %-20@ %6.2f ms %5.1f%%", carrier, name as NSString, a.0, a.1))
+        check(a.0 < 6 && a.1 < 1, "timecode \(Int(carrier)) Hz \(name)")
+    }
+}
+
 print("== pilot fader (control + 18 kHz pilot cut at 10 Hz with 1 ms ramps)")
 do {
     let cuts: (Double) -> Double = { t in let u = (t * 20).truncatingRemainder(dividingBy: 2), r = 0.02
@@ -104,6 +138,31 @@ do {
     check(p.recording != nil && p.recordingFrames == Int(0.5 * SR), "diagnostic capture")
     var finite = true; for i in 0..<blk where !outL[i].isFinite { finite = false }
     check(finite, "finite output")
+}
+
+print("== processor in stereo timecode mode: virtual platter, calibration finds the carrier")
+do {
+    let p = Processor(sr: SR)
+    p.control = .timecode; p.simOn = true; p.wowRead = .pilot
+    p.quad.carrierHz = 1000   // the sim plays 1 kHz; calibrating from a 2 kHz guess must find it
+    let blk = 128
+    let outL = UnsafeMutablePointer<Float>.allocate(capacity: blk), outR = UnsafeMutablePointer<Float>.allocate(capacity: blk)
+    func run(_ seconds: Double) { for _ in 0..<Int(seconds * SR / Double(blk)) { p.render(frames: blk, ctrl: nil, liveL: nil, liveR: nil, outL: outL, outR: outR) } }
+    run(0.5)
+    p.calibrateRequests += 1; run(1.8)
+    if let c = p.calibration {
+        print(String(format: "  calibration: speed %.4f spread %.3f dir %.2f balance %.2f", c.speed, c.spread, c.dir, c.balance))
+        check(abs(c.speed - 1) < 0.01 && c.spread < 0.05 && c.dir > 0.9 && abs(c.balance - 1) < 0.1, "timecode calibration")
+    } else { check(false, "timecode calibration finished") }
+    p.simHand = true; p.simHandV = -1.0; run(0.3)
+    check(p.state.dir == -1 && p.state.v < -0.8, "timecode backward")
+    p.simHand = false; run(1.5)
+    check(p.state.locked && p.state.lag / SR * 1000 < 3, "timecode snaps back to live")
+    // tap pad: cuts by default, opens when touched in the other mode
+    p.padStyle = true; p.faderMode = .virtual; p.padOpen = false; run(0.05)
+    check(p.state.gain < 0.01, "pad closed silences")
+    p.padOpen = true; run(0.05)
+    check(p.state.gain > 0.99, "pad open plays")
 }
 
 print(failures == 0 ? "\nALL PASS" : "\n\(failures) FAILURE(S)")

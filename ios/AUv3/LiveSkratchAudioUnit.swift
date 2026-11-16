@@ -118,8 +118,13 @@ public final class LiveSkratchAudioUnit: AUAudioUnit, ScratcherHost {
             // the host may hand back its own buffers
             let srcL = list[0].mData?.assumingMemoryBound(to: Float.self) ?? inL
             let srcR = list.count > 1 ? (list[1].mData?.assumingMemoryBound(to: Float.self) ?? inR) : srcL
-            let ctrl = self.ctrlRight ? srcR : srcL, live = self.ctrlRight ? srcL : srcR
-            self.processor.render(frames: n, ctrl: ctrl, liveL: live, liveR: live, outL: outL, outR: outR)
+            if self.processor.control == .timecode {
+                // both inputs carry the timecode; the loop is what gets scratched
+                self.processor.render(frames: n, ctrl: srcL, ctrlR: srcR, liveL: nil, liveR: nil, outL: outL, outR: outR)
+            } else {
+                let ctrl = self.ctrlRight ? srcR : srcL, live = self.ctrlRight ? srcL : srcR
+                self.processor.render(frames: n, ctrl: ctrl, liveL: live, liveR: live, outL: outL, outR: outR)
+            }
             let out = UnsafeMutableAudioBufferListPointer(outputData)
             for i in 0..<out.count {
                 let src = i == 0 ? outL : outR

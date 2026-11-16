@@ -126,6 +126,9 @@ struct WowSetupSection: View {
             if let u = Bundle.main.url(forResource: "00-liveskratch-pilot", withExtension: "wav") {
                 ShareLink(item: u) { Label("Share the pilot beat", systemImage: "waveform") }
             }
+            if let u = Bundle.main.url(forResource: "00-liveskratch-timecode", withExtension: "wav") {
+                ShareLink(item: u) { Label("Share the stereo timecode (SC-1000 / SC-500)", systemImage: "waveform.path") }
+            }
         } header: {
             Text("WOW setup")
         } footer: {

@@ -6,6 +6,8 @@ import Foundation
 
 public enum FaderMode: String, CaseIterable, Codable { case both, wow, virtual, open }
 public enum WowRead: String, CaseIterable, Codable { case pilot, level }
+/// What the control input carries: the WOW's mono tone, or stereo timecode (Serato / Traktor / LiveSkratch stereo).
+public enum ControlSignal: String, CaseIterable, Codable { case wowTone, timecode }
 
 /// What the UI polls each frame.
 public struct ProcessorState {
@@ -19,13 +21,17 @@ public struct ProcessorState {
 public struct CalibrationResult {
     public var speed: Double, spread: Double, dir: Double, env: Double, activeFrac: Double
     public var pilotHz: Double, pilotAmp: Double
+    public var balance: Double = 1     // timecode: right-channel gain that equalises the two channels
 }
 
 public final class Processor {
     public let sr: Double
     public let dec: ToneDecoder
+    public let quad: QuadDecoder
     public let pilot: PilotReader
+    public let pilotR: PilotReader       // notches the pilot out of the right channel of stereo timecode
     public let eng: ScratchEngine
+    public var control: ControlSignal = .wowTone
 
     // ---- parameters (written by the UI thread) ----
     public var wowRead: WowRead = .pilot
@@ -37,9 +43,11 @@ public final class Processor {
     public var faderLo = 0.08, faderHi = 0.45
     public var softCut = false
     public var vfX = 0.0, vfCut = 0.05, vfWidth = 0.02, vfHamster = false
+    /// On-screen tap pad instead of the slider: the virtual fader is simply open or shut.
+    public var padStyle = false, padOpen = true
     // virtual platter
     public var simOn = false, simMotor = true, simHand = false, simHandV = 0.0, simFader = 1.0
-    var simTheta = 0.0, simPh = 0.0, simFg = 0.0, seed: UInt32 = 1
+    var simTheta = 0.0, simQ = 0.0, simPh = 0.0, simFg = 0.0, seed: UInt32 = 1
     public private(set) var simV = 0.0
     // built-in test loop as the live source (set from the UI thread before enabling)
     public var testLoop: UnsafeMutablePointer<Float>? = nil
@@ -80,7 +88,9 @@ public final class Processor {
     public init(sr: Double) {
         self.sr = sr
         dec = ToneDecoder(sr: sr)
+        quad = QuadDecoder(sr: sr)
         pilot = PilotReader(sr: sr)
+        pilotR = PilotReader(sr: sr)
         eng = ScratchEngine(sr: sr)
         calN = Int((1.5 * sr).rounded())
         calSpeeds = .allocate(capacity: calN / 32 + 8)
@@ -88,7 +98,9 @@ public final class Processor {
     }
     deinit { calSpeeds.deallocate(); bins.deallocate(); recBuf?.deallocate(); retiredRec?.deallocate() }
 
-    func applyGate() { dec.gate = max(userGate, 0.1 * toneRef) }
+    func applyGate() { let g = max(userGate, 0.1 * toneRef); dec.gate = g; quad.gate = g }
+    /// Retune the pilot notches on both channels.
+    public func setPilotFreq(_ f: Double) { pilot.setFreq(f); pilotR.setFreq(f) }
 
     /// UI thread: allocate a capture buffer, then ask the audio thread to fill it.
     /// (The buffer is reused, never freed while running: the audio thread may be writing into it.)
@@ -108,9 +120,10 @@ public final class Processor {
         return Double(seed) / 4294967296 - 0.5
     }
 
-    /// Render one block. `ctrl` may be nil (no WOW input), `liveR` may equal `liveL` (mono).
+    /// Render one block. `ctrl` may be nil (no control input); `ctrlR` is the right channel of stereo timecode;
+    /// `liveR` may equal `liveL` (mono).
     public func render(frames: Int,
-                       ctrl: UnsafePointer<Float>?,
+                       ctrl: UnsafePointer<Float>?, ctrlR: UnsafePointer<Float>? = nil,
                        liveL: UnsafePointer<Float>?, liveR: UnsafePointer<Float>?,
                        outL: UnsafeMutablePointer<Float>, outR: UnsafeMutablePointer<Float>) {
         // handle requests
@@ -125,32 +138,50 @@ public final class Processor {
 
         let handK = 1 - exp(-1 / (0.002 * sr)), motorK = 1 - exp(-1 / (0.09 * sr))
         let vx = vfHamster ? 1 - vfX : vfX
-        let vfGain = 1 - faderCurve(vx, vfCut, vfCut + max(0.005, vfWidth))
+        let vfGain = padStyle ? (padOpen ? 1.0 : 0.0) : 1 - faderCurve(vx, vfCut, vfCut + max(0.005, vfWidth))
         let usePilot = wowRead == .pilot
         dec.gainFilter = usePilot ? pilot : nil
         let span = 2 * Double.pi * Tone.amCycles
+        let stereo = control == .timecode
 
         for i in 0..<frames {
             var c = Double(ctrl?[i] ?? 0)
+            var c2 = Double(ctrlR?[i] ?? 0)
             if simOn {
                 let target = simHand ? simHandV : (simMotor ? 1 : 0)
                 simV += (target - simV) * (simHand ? handK : motorK)
-                simTheta += 2 * .pi * Tone.f0 * simV / sr
-                if simTheta > 1e6 { simTheta -= span * (simTheta / span).rounded(.down) }
+                var pil = 0.0
                 if usePilot {
                     simPh += 2 * .pi * pilotHz / sr; if simPh > 2 * .pi { simPh -= 2 * .pi }
                     simFg += (simFader - simFg) * 0.03
-                    c = 0.35 * Tone.sample(simTheta) + 0.35 * simFg * sin(simPh) + rnd() * 2e-4
+                    pil = 0.35 * simFg * sin(simPh)
+                }
+                let lvl = usePilot ? 0.35 : 0.445 * simFader
+                if stereo {
+                    simQ += 2 * .pi * quad.carrierHz * simV / sr
+                    if abs(simQ) > 1e6 { simQ = simQ.truncatingRemainder(dividingBy: 2 * .pi) }
+                    c = lvl * cos(simQ) + pil + rnd() * 2e-4
+                    c2 = lvl * sin(simQ) + pil + rnd() * 2e-4
                 } else {
-                    c = 0.445 * simFader * Tone.sample(simTheta) + rnd() * 2e-4
+                    simTheta += 2 * .pi * Tone.f0 * simV / sr
+                    if simTheta > 1e6 { simTheta -= span * (simTheta / span).rounded(.down) }
+                    c = lvl * Tone.sample(simTheta) + pil + rnd() * 2e-4
                 }
             }
             let pc = pilot.process(c)               // always runs: measures the pilot even in tone-level mode
-            let r = dec.process(usePilot ? pc : c)
+            let r: Double
+            if stereo {
+                let pc2 = pilotR.process(c2)
+                r = quad.process(usePilot ? pc : c, usePilot ? pc2 : c2)
+            } else {
+                r = dec.process(usePilot ? pc : c)
+            }
+            let cActive = stereo ? quad.active : dec.active
+            let cEnv = stereo ? quad.env : dec.env
 
             var g = 1.0
             if faderMode == .wow || faderMode == .both {
-                let lvl = usePilot ? pilot.amp / max(1e-4, pilotRef) : dec.env / max(1e-4, refLevel)
+                let lvl = usePilot ? pilot.amp / max(1e-4, pilotRef) : cEnv / max(1e-4, refLevel)
                 g = faderCurve(lvl, faderLo, faderHi)
             }
             if faderMode == .virtual || faderMode == .both { g *= vfGain }
@@ -185,17 +216,20 @@ public final class Processor {
 
             if calOn {
                 calI += 1
-                if dec.active { calActive += 1 }
-                if calI & 31 == 0 && dec.active {
-                    if dec.rawSpeed > 0 { calSpeeds[calCount] = dec.rawSpeed; calCount += 1 }
-                    calDir += Double(dec.dir); calDirN += 1; calEnv += dec.env; calEnvN += 1
+                if cActive { calActive += 1 }
+                if calI & 31 == 0 && cActive {
+                    let rs = stereo ? quad.rawSpeed : dec.rawSpeed
+                    if rs > 0 { calSpeeds[calCount] = rs; calCount += 1 }
+                    calDir += Double(stereo ? quad.dir : dec.dir); calDirN += 1; calEnv += cEnv; calEnvN += 1
                 }
                 if calI >= calN { finishCalibration() }
             }
         }
 
         state = ProcessorState(v: eng.vs, rate: eng.rate, lag: eng.lag, locked: eng.locked, frozen: eng.frozen,
-                               active: dec.active, env: dec.env, dir: dec.dir, stat: dec.lastStat, pos: dec.posInt,
+                               active: stereo ? quad.active : dec.active, env: stereo ? quad.env : dec.env,
+                               dir: stereo ? quad.dir : dec.dir, stat: stereo ? 0 : dec.lastStat,
+                               pos: stereo ? quad.posInt : dec.posInt,
                                gain: eng.gain, ctrlPk: ctrlPk, livePk: livePk, outPk: outPk,
                                simV: simV, loopLen: eng.loopLen, pilotAmp: pilot.amp)
     }
@@ -216,7 +250,8 @@ public final class Processor {
                                         dir: calDirN > 0 ? calDir / Double(calDirN) : 0,
                                         env: calEnvN > 0 ? calEnv / Double(calEnvN) : 0,
                                         activeFrac: Double(calActive) / Double(max(1, calI)),
-                                        pilotHz: m.hz, pilotAmp: m.amp)
+                                        pilotHz: m.hz, pilotAmp: m.amp,
+                                        balance: quad.levelR > 1e-12 ? (quad.levelL / quad.levelR).squareRoot() : 1)
         calibrationSerial += 1
     }
 }

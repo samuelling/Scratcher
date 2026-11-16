@@ -337,3 +337,91 @@ public final class ScratchEngine {
         return (dyL * g, dyR * g)
     }
 }
+
+// MARK: - Stereo timecode decoder (Serato, Traktor, LiveSkratch stereo)
+
+/// Commercial timecode carries the same carrier on both channels a quarter-cycle apart, so the pair traces a
+/// circle: its angle is the needle's position within a carrier cycle, and which way it turns is the direction.
+/// LiveSkratch only needs speed and direction (it scratches live audio, not a track), so the position bits
+/// the timecode also carries are ignored: this is a "relative mode" decoder that works with any such timecode.
+public final class QuadDecoder {
+    public let sr: Double
+    public var carrierHz: Double = 1000
+    public var flip = false
+    public var gate = 0.0015
+    /// Right-channel gain that makes both channels equal (measured by calibration).
+    public var balance = 1.0
+
+    // DC removal at 2 % of the carrier: identical on both channels, so it shifts their phase equally and the
+    // angle stays exact, while a stopped record's leftover level clears in a few ms instead of ~50.
+    var hpA = 0.0, hpFor = -1.0
+    var xL = 0.0, yL = 0.0, xR = 0.0, yR = 0.0
+    public private(set) var env = 0.0
+    public private(set) var active = false
+    var prevPhase = 0.0, havePrev = false
+    var phi = 0.0                                     // unwrapped phase, radians
+    let ringSize = 8192
+    let ring: UnsafeMutablePointer<Double>
+    var n = 0, filled = 0
+    public private(set) var v = 0.0
+    public private(set) var dir = 1
+    public private(set) var rawSpeed = 0.0
+    public private(set) var posInt = 0.0
+    public private(set) var levelL = 0.0, levelR = 0.0  // slow RMS, for calibration
+
+    public init(sr: Double) {
+        self.sr = sr
+        ring = .allocate(capacity: ringSize); ring.initialize(repeating: 0, count: ringSize)
+    }
+    deinit { ring.deallocate() }
+
+    @inline(__always) public func process(_ l: Double, _ r: Double) -> Double {
+        if carrierHz != hpFor { hpFor = carrierHz; hpA = exp(-2 * .pi * max(5, 0.02 * carrierHz) / sr) }
+        let a = hpA * (yL + l - xL); xL = l; yL = a
+        let b0 = hpA * (yR + r - xR); xR = r; yR = b0
+        let b = b0 * balance
+        levelL += (a * a - levelL) * 0.0005; levelR += (b0 * b0 - levelR) * 0.0005
+        // quadrature magnitude is ripple-free, so a short peak hold is enough
+        let mag = (a * a + b * b).squareRoot()
+        let relT = max(0.002 * sr, 3 * sr / max(50, carrierHz))
+        env = max(mag, env * exp(-1 / relT))
+        // hysteresis: wake only when clearly above the gate, so noise at the threshold can't flicker it on
+        active = active ? env > gate : env > 2 * gate
+        let M = ringSize - 1
+        if !active {
+            havePrev = false; v = 0; rawSpeed = 0
+            ring[n & M] = phi; n += 1; filled = 0
+            return 0
+        }
+        if mag < 0.5 * gate {           // a dip into the noise: hold the phase rather than follow the noise
+            ring[n & M] = phi; n += 1; posInt += v
+            return v
+        }
+        let p = atan2(b, a)
+        if havePrev {
+            var d = p - prevPhase
+            if d > .pi { d -= 2 * .pi } else if d < -.pi { d += 2 * .pi }
+            phi += d
+        }
+        prevPhase = p; havePrev = true
+        ring[n & M] = phi
+        // speed over one carrier period at 1×: cancels the ripple from channel imbalance and phase error
+        let W = max(4, min(4096, Int((sr / carrierHz).rounded())))
+        filled += 1
+        if filled > W {
+            var s = (phi - ring[(n - W) & M]) / (2 * .pi * Double(W) * carrierHz / sr)
+            if flip { s = -s }
+            v = s
+            rawSpeed = abs(s)
+            if abs(s) > 0.02 { dir = s > 0 ? 1 : -1 }
+        }
+        n += 1
+        posInt += v
+        return v
+    }
+}
+
+/// The LiveSkratch stereo timecode: a plain quadrature sine pair (left = cos, right = sin).
+public enum StereoTimecode {
+    public static let hz: Double = 1000
+}

@@ -46,6 +46,7 @@ struct PluginRootView: View {
 
     var body: some View {
         ScratcherTabs(model: model) {
+            if model.settings.controlSignal == .wowTone {
             Section {
                 Picker("WOW tone on", selection: model.binding(\.ctrlChannel)) {
                     Text("Left input").tag(0); Text("Right input").tag(1)
@@ -55,6 +56,7 @@ struct PluginRootView: View {
                 Text("Inputs")
             } footer: {
                 Text("In AUM, make a stereo channel from two interface inputs, one the WOW and one the live audio, and insert LiveSkratch. The other side is what you scratch.")
+            }
             }
         }
     }

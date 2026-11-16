@@ -34,7 +34,7 @@ final class AppHost: ObservableObject, ScratcherHost {
     private let maxFrames = 4096
     private let outL: UnsafeMutablePointer<Float>, outR: UnsafeMutablePointer<Float>
     // render-thread copies of the routing (plain Ints)
-    private var inCh = 0, outCh = 2, rCtrl = 0, rLiveL = 1, rLiveR = 1, rPair = 0
+    private var inCh = 0, outCh = 2, rCtrl = 0, rCtrlR = 1, rLiveL = 1, rLiveR = 1, rPair = 0
     private var observers: [NSObjectProtocol] = []
 
     init() {
@@ -211,6 +211,7 @@ final class AppHost: ObservableObject, ScratcherHost {
         let st = st ?? settings
         let last = max(0, inCh - 1)
         rCtrl = min(st.ctrlChannel, last)
+        rCtrlR = min(st.ctrlChannelR, last)
         rLiveL = min(st.liveLeft, last)
         rLiveR = min(st.liveRight, last)
         rPair = min(st.outPair, max(0, (outCh - 1) / 2))
@@ -221,7 +222,8 @@ final class AppHost: ObservableObject, ScratcherHost {
     private func render(_ flags: UnsafeMutablePointer<AudioUnitRenderActionFlags>, _ ts: UnsafePointer<AudioTimeStamp>,
                         _ frames: AUAudioFrameCount, _ data: UnsafeMutablePointer<AudioBufferList>) -> AUAudioUnitStatus {
         let n = min(Int(frames), maxFrames)
-        var ctrl: UnsafePointer<Float>? = nil, liveL: UnsafePointer<Float>? = nil, liveR: UnsafePointer<Float>? = nil
+        var ctrl: UnsafePointer<Float>? = nil, ctrlR: UnsafePointer<Float>? = nil
+        var liveL: UnsafePointer<Float>? = nil, liveR: UnsafePointer<Float>? = nil
         if inCh > 0, let list = inABL, let pull, inChans.count == inCh {
             for i in 0..<inCh {
                 list[i].mNumberChannels = 1
@@ -234,10 +236,10 @@ final class AppHost: ObservableObject, ScratcherHost {
                 func ch(_ i: Int) -> UnsafePointer<Float> {
                     UnsafePointer(list[i].mData?.assumingMemoryBound(to: Float.self) ?? inChans[i])
                 }
-                ctrl = ch(rCtrl); liveL = ch(rLiveL); liveR = ch(rLiveR)
+                ctrl = ch(rCtrl); ctrlR = ch(rCtrlR); liveL = ch(rLiveL); liveR = ch(rLiveR)
             }
         }
-        processor.render(frames: n, ctrl: ctrl, liveL: liveL, liveR: liveR, outL: outL, outR: outR)
+        processor.render(frames: n, ctrl: ctrl, ctrlR: ctrlR, liveL: liveL, liveR: liveR, outL: outL, outR: outR)
         let out = UnsafeMutableAudioBufferListPointer(data)
         for i in 0..<out.count {
             guard let p = out[i].mData?.assumingMemoryBound(to: Float.self) else { continue }

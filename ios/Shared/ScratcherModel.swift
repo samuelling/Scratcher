@@ -120,6 +120,13 @@ final class ScratcherModel: ObservableObject {
     func jumpToLive() { host?.processor.jumpRequests += 1 }
     func toggleFreeze() { guard let p = host?.processor else { return }; p.freezeTarget.toggle() }
     func setCut(_ on: Bool) { host?.processor.softCut = on }
+    /// Tap pad: finger down or up.
+    func setPad(down: Bool) {
+        guard let p = host?.processor else { return }
+        p.padOpen = settings.padCuts ? !down : down
+    }
+    /// Pad state with no finger on it (called when the pad mode changes).
+    func resetPad() { setPad(down: false) }
     func setHand(down: Bool, velocity: Double) {
         guard let p = host?.processor else { return }
         handDown = down; handStamp = Date()
@@ -136,13 +143,26 @@ final class ScratcherModel: ObservableObject {
     }
     private func finishCalibration(_ c: CalibrationResult) {
         if c.activeFrac < 0.9 || c.speed <= 0 {
-            calMessage = "No steady control tone: check the input channel, the tone is playing, and the WOW in meter is moving."; calOK = false; return
+            calMessage = settings.controlSignal == .timecode
+                ? "No steady timecode: check both timecode inputs and that the record or file is playing at normal speed."
+                : "No steady control tone: check the input channel, the tone is playing, and the WOW meter is moving."
+            calOK = false; return
         }
         if c.spread > 0.12 {
             calMessage = String(format: "Speed unsteady (±%.0f%%): hands off the platter and try again.", c.spread * 50); calOK = false; return
         }
         var s = settings
-        s.calib = c.speed; s.refLevel = c.env
+        if s.controlSignal == .timecode {
+            // speed was measured against the carrier we assumed: the true carrier is that much faster or slower
+            guard c.speed > 0.3 && c.speed < 4 else {
+                calMessage = "That doesn't look like timecode at 1 to 2 kHz: check both timecode inputs and that the record or file is playing."; calOK = false; return
+            }
+            s.carrierHz *= c.speed
+            s.balance = min(4, max(0.25, c.balance))
+        } else {
+            s.calib = c.speed
+        }
+        s.refLevel = c.env
         if c.dir < 0 { s.flip = true }
         if s.wowRead == .pilot {
             guard c.pilotHz > 12000, c.pilotHz < 23000, c.pilotAmp > 0.003 else {
@@ -155,7 +175,9 @@ final class ScratcherModel: ObservableObject {
         calMessage = Self.describe(s); calOK = true
     }
     static func describe(_ s: ScratcherSettings) -> String {
-        var t = String(format: "1× = %.4f of nominal · level %.1f dBFS", s.calib, 20 * log10(max(1e-6, s.refLevel)))
+        var t = s.controlSignal == .timecode
+            ? String(format: "Timecode carrier %.1f Hz · level %.1f dBFS", s.carrierHz, 20 * log10(max(1e-6, s.refLevel)))
+            : String(format: "1× = %.4f of nominal · level %.1f dBFS", s.calib, 20 * log10(max(1e-6, s.refLevel)))
         if s.flip { t += " · flipped" }
         if s.wowRead == .pilot { t += String(format: " · pilot %.2f kHz", s.pilotHz / 1000) }
         return t

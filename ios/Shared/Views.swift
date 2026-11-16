@@ -22,6 +22,7 @@ struct ScratcherTabs<Setup: View>: View {
                 .tabItem { Label("Scratch", systemImage: "opticaldisc") }
             NavigationStack {
                 Form {
+                    ControlSignalSection(model: model)
                     setup
                     SourceSection(model: model)
                     CalibrateSection(model: model)
@@ -120,7 +121,11 @@ struct PlayView: View {
             Readouts(state: model.state, sampleRate: model.sampleRate)
             TapeView(model: model).frame(height: 56)
             Meters(state: model.state)
-            Crossfader(model: model)
+            if model.settings.faderStyle == .pad {
+                FaderPad(model: model)
+            } else {
+                Crossfader(model: model)
+            }
             Transport(model: model)
         }
     }
@@ -171,11 +176,39 @@ struct Crossfader: View {
     }
 }
 
+/// The on-screen fader as a tap pad, like a PT01's cut switch: touch it to chop the sound.
+struct FaderPad: View {
+    @ObservedObject var model: ScratcherModel
+    @State private var down = false
+    var body: some View {
+        let cuts = model.settings.padCuts
+        let soundOn = cuts ? !down : down
+        RoundedRectangle(cornerRadius: 16)
+            .fill(soundOn ? accent.opacity(down ? 0.55 : 0.28) : Color(white: down ? 0.22 : 0.13))
+            .overlay {
+                VStack(spacing: 2) {
+                    Text(cuts ? (down ? "CUT" : "Tap to cut") : (down ? "OPEN" : "Hold to open"))
+                        .font(.headline)
+                    Text(soundOn ? "sound on" : "sound off").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(soundOn ? accent : Color(white: 0.3), lineWidth: 1.5))
+            .frame(height: 84)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in if !down { down = true; model.setPad(down: true) } }
+                .onEnded { _ in down = false; model.setPad(down: false) })
+            .accessibilityLabel("Fader pad")
+    }
+}
+
 struct Transport: View {
     @ObservedObject var model: ScratcherModel
     var body: some View {
         HStack(spacing: 10) {
-            HoldButton(title: "Cut", icon: "scissors") { model.setCut($0) }
+            if model.settings.faderStyle == .slider {
+                HoldButton(title: "Cut", icon: "scissors") { model.setCut($0) }
+            }
             TransportButton(title: model.state.frozen ? "Frozen" : "Freeze", icon: "snowflake",
                             lit: model.state.frozen, color: .cyan) { model.toggleFreeze() }
             TransportButton(title: "Live", icon: "forward.end.fill", lit: false, color: accent) { model.jumpToLive() }
@@ -343,6 +376,35 @@ struct SliderRow: View {
     }
 }
 
+struct ControlSignalSection: View {
+    @ObservedObject var model: ScratcherModel
+    var body: some View {
+        let timecode = model.settings.controlSignal == .timecode
+        Section {
+            Picker("Control signal", selection: Binding(get: { model.settings.controlSignal },
+                                                       set: { c in var s = model.settings; s.setControl(c); model.settings = s })) {
+                Text("WOW tone").tag(ControlSignal.wowTone)
+                Text("Stereo timecode").tag(ControlSignal.timecode)
+            }
+            if timecode {
+                Picker("Timecode", selection: Binding(get: { model.settings.carrierHz < 1500 ? 1000.0 : 2000.0 },
+                                                      set: { hz in var s = model.settings; s.carrierHz = hz; s.calibrated = false; model.settings = s })) {
+                    Text("Serato · LiveSkratch").tag(1000.0)
+                    Text("Traktor").tag(2000.0)
+                }
+            }
+        } header: {
+            Text("Control")
+        } footer: {
+            Text(timecode
+                 ? (model.host?.isPlugin == true
+                    ? "Stereo timecode uses both plugin inputs, so you scratch the loop (or a loaded file). Calibrate detects the exact timecode."
+                    : "Control vinyl or CDs (Serato, Traktor), or the LiveSkratch timecode file played by an SC-1000 / SC-500. Needs two inputs. Calibrate detects the exact timecode.")
+                 : "The LiveSkratch tone, played by a WOW in LiveSkratch mode.")
+        }
+    }
+}
+
 struct SourceSection: View {
     @ObservedObject var model: ScratcherModel
     @State private var pickingLoop = false
@@ -433,10 +495,26 @@ struct FaderSection: View {
 struct VirtualFaderSection: View {
     @ObservedObject var model: ScratcherModel
     var body: some View {
-        Section("On-screen crossfader") {
-            SliderRow(label: "Cut-in", value: model.binding(\.vfCut), range: 0...0.5)
-            SliderRow(label: "Curve", value: model.binding(\.vfWidth), range: 0.005...0.5)
-            Toggle("Hamster (reverse)", isOn: model.binding(\.hamster))
+        Section {
+            Picker("Style", selection: model.binding(\.faderStyle)) {
+                Text("Tap pad").tag(FaderStyle.pad); Text("Slider").tag(FaderStyle.slider)
+            }
+            .pickerStyle(.segmented)
+            if model.settings.faderStyle == .pad {
+                Picker("Touching the pad", selection: model.binding(\.padCuts)) {
+                    Text("Cuts the sound").tag(true); Text("Opens the sound").tag(false)
+                }
+            } else {
+                SliderRow(label: "Cut-in", value: model.binding(\.vfCut), range: 0...0.5)
+                SliderRow(label: "Curve", value: model.binding(\.vfWidth), range: 0.005...0.5)
+                Toggle("Hamster (reverse)", isOn: model.binding(\.hamster))
+            }
+        } header: {
+            Text("On-screen fader")
+        } footer: {
+            Text(model.settings.faderStyle == .pad
+                 ? "Like a PT01's cut switch: tap the pad in rhythm to chop the sound."
+                 : "A crossfader slider, with a Cut button beside Freeze and Live.")
         }
     }
 }

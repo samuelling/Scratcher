@@ -43,7 +43,12 @@ struct RoutingSection: View {
                 Text("No inputs yet. Plug in an audio interface, and allow microphone access in Settings, to use the WOW and live audio.")
                     .font(.footnote).foregroundStyle(.secondary)
             } else {
-                channelPicker("WOW input", \.ctrlChannel)
+                if model.settings.controlSignal == .timecode {
+                    channelPicker("Timecode L", \.ctrlChannel)
+                    channelPicker("Timecode R", \.ctrlChannelR)
+                } else {
+                    channelPicker("WOW input", \.ctrlChannel)
+                }
                 channelPicker("Live input L", \.liveLeft)
                 channelPicker("Live input R", \.liveRight)
             }

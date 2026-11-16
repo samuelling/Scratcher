@@ -39,10 +39,8 @@ enum HelpText {
                              text: "Tone: the WOW's control tone is coming in. 1×: the platter is at normal speed, so playback locks to live. Calibrated: the app has measured your WOW."),
                 ]),
                 HelpSection("Playing", [
-                    HelpItem(icon: "slider.horizontal.below.rectangle", title: "Crossfader",
-                             text: "An on-screen fader. By default it works together with the WOW's own fader: sound plays only when both are open. Change this in Feel."),
-                    HelpItem(icon: "scissors", title: "Cut",
-                             text: "Silent while you hold it, like slamming the fader shut."),
+                    HelpItem(icon: "hand.tap", title: "Fader pad",
+                             text: "An on-screen cut switch, like a PT01's: touch it to chop the sound, in rhythm with your scratches. It works together with the WOW's own fader: sound plays only when both are open. In Feel you can make touching open the sound instead, or switch to a slider."),
                     HelpItem(icon: "snowflake", title: "Freeze",
                              text: "Stops taking in new audio, so the last few seconds become a fixed loop you can scratch over and over. Tap again to go back to live."),
                     HelpItem(icon: "forward.end.fill", title: "Live",
@@ -75,6 +73,8 @@ enum HelpText {
                 ]))
             }
             sections.append(HelpSection("Getting ready", [
+                HelpItem(icon: "dot.radiowaves.left.and.right", title: "Control signal",
+                         text: "WOW tone: the LiveSkratch tone played by a WOW (it has a mono output). Stereo timecode: Serato or Traktor control vinyl or CDs, or the LiveSkratch timecode file played by an SC-1000 / SC-500. Stereo timecode needs two inputs and tracks even more tightly."),
                 HelpItem(icon: "repeat", title: "What you scratch",
                          text: "Loop plays a built-in “ahhh / fresh” loop, or any audio file you load, so you can practise without other gear. Live input scratches whatever comes in from your interface."),
                 HelpItem(icon: "hand.draw", title: "Virtual platter",
@@ -97,8 +97,10 @@ enum HelpText {
                     HelpItem(icon: "waveform.path.badge.minus", title: "Tone gate",
                              text: "Below this level the platter counts as stopped. Raise it if a stopped record slowly drifts."),
                 ]),
-                HelpSection("On-screen crossfader", [
-                    HelpItem(icon: "slider.horizontal.3", title: "Cut-in, Curve, Hamster",
+                HelpSection("On-screen fader", [
+                    HelpItem(icon: "hand.tap", title: "Tap pad or slider",
+                             text: "Tap pad: a cut switch you tap in rhythm. Choose whether touching it cuts or opens the sound."),
+                    HelpItem(icon: "slider.horizontal.3", title: "Slider: Cut-in, Curve, Hamster",
                              text: "Cut-in is how far you move before sound starts; Curve is how quickly it reaches full volume; Hamster flips the direction."),
                 ]),
                 HelpSection("Feel", [
@@ -202,7 +204,7 @@ struct WalkthroughView: View {
         ]),
         WalkthroughPage(icon: "hand.draw.fill", title: "4 · Scratch", steps: [
             "Scratch tab: move the record and the live audio moves with it.",
-            "The WOW's fader and the on-screen crossfader both cut the sound. Hold Cut to silence, Freeze to hold a loop, Live to jump back to now.",
+            "The WOW's fader and the on-screen pad both cut the sound: tap the pad to chop. Freeze holds a loop; Live jumps back to now.",
             "Fine-tune the fader and feel in the Feel tab.",
             "Tap ? on any screen for help.",
         ]),
