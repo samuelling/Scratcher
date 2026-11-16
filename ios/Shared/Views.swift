@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-let accent = Theme.orange
+let accent = Theme.green
 let revPerSecond = 0.555   // 33⅓ rpm at 1×
 
 // MARK: - App shell: Scratch / Setup / Feel tabs (shared by the app and the plugin)
@@ -79,8 +79,8 @@ struct PlayView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header
                     if let problem {
-                        Label(problem, systemImage: "exclamationmark.triangle.fill")
-                            .font(.footnote).foregroundStyle(.orange)
+                        Label(problem, systemImage: "exclamationmark.triangle")
+                            .font(Theme.wide(14, .medium)).foregroundStyle(Theme.red)
                     }
                     if wide {
                         HStack(alignment: .center, spacing: 28) {
@@ -106,24 +106,21 @@ struct PlayView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 10) {
-                (Text("LIVESKRATCH").foregroundStyle(Theme.chrome) + Text(".").foregroundStyle(Theme.orange))
-                    .font(Theme.wide(22, .black).italic())
-                    .shadow(color: .black.opacity(0.8), radius: 0, y: 1)
+                (Text("LIVESKRATCH").foregroundStyle(Theme.ink) + Text(".").foregroundStyle(Theme.red))
+                    .font(Theme.wide(28, .semibold)).kerning(2)
                     .lineLimit(1).minimumScaleFactor(0.7)
-                Text("LS-2000")
-                    .font(Theme.lcdFont(10).weight(.bold))
-                    .foregroundStyle(Color(red: 0.06, green: 0.075, blue: 0.1))
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Capsule().fill(Theme.chrome))
+                Text("LS-1").font(Theme.wide(11, .semibold)).kerning(1.5).foregroundStyle(Theme.blue)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.blue, lineWidth: Theme.stroke))
                 Spacer()
-                HelpButton(action: onHelp).tint(Theme.cyan)
+                HelpButton(action: onHelp).tint(Theme.ink)
             }
             HStack(spacing: 6) {
                 let s = model.state
-                Pill(on: s.active, text: s.active ? "Signal" : "No signal", color: s.active ? Theme.lime : Theme.orange)
-                Pill(on: s.locked, text: "1× lock", color: Theme.cyan)
+                Pill(on: s.active, text: s.active ? "Signal" : "No signal", color: s.active ? Theme.green : Theme.red)
+                Pill(on: s.locked, text: "1× lock", color: Theme.blue)
                 Pill(on: model.settings.calibrated, text: model.settings.calibrated ? "Calibrated" : "Not calibrated",
-                     color: Theme.lime)
+                     color: Theme.green)
                 if s.frozen { Pill(on: true, text: "Frozen", color: Theme.amber) }
                 Spacer(minLength: 0)
             }
@@ -150,47 +147,43 @@ struct Readouts: View {
     let sampleRate: Double
     var body: some View {
         HStack(spacing: 8) {
-            cell("Speed", String(format: "%+.2f×", state.v))
-            cell("Direction", !state.active ? "—" : (state.dir > 0 ? "Fwd" : "Back"))
-            cell("Behind live", String(format: "%.0f ms", state.lag / sampleRate * 1000))
+            cell("Speed", String(format: "%+.2f×", state.v), Theme.blue)
+            cell("Direction", !state.active ? "—" : (state.dir > 0 ? "FWD" : "BACK"), state.dir > 0 ? Theme.green : Theme.red)
+            cell("Behind live", String(format: "%.0f ms", state.lag / sampleRate * 1000), Theme.ink)
         }
     }
-    private func cell(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label.uppercased()).font(Theme.wide(8, .semibold)).foregroundStyle(Theme.lcdDim).lineLimit(1).minimumScaleFactor(0.7)
-            Text(value).font(Theme.lcdFont(22)).foregroundStyle(Theme.cyan)
-                .shadow(color: Theme.cyan.opacity(0.7), radius: 6)
-                .lineLimit(1).minimumScaleFactor(0.6)
+    private func cell(_ label: String, _ value: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased()).font(Theme.wide(11, .semibold)).kerning(1.2).foregroundStyle(Theme.dim).lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(Theme.lcdFont(28)).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.6)
         }
-        .padding(.horizontal, 10).padding(.vertical, 8)
+        .padding(.horizontal, 10).padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(LCDBackground())
     }
 }
 
-/// A status light: a glowing LED and a label in a dark capsule.
+/// A status light: a small dot (filled when on) and a label, in an outlined tag.
 struct Pill: View {
     let on: Bool, text: String
-    var color: Color = Theme.lime
+    var color: Color = Theme.green
     var body: some View {
         HStack(spacing: 6) {
-            Circle().fill(on ? color : Color(white: 0.18)).frame(width: 7, height: 7)
-                .shadow(color: on ? color : .clear, radius: 4)
-            Text(text.uppercased()).font(Theme.wide(8, .semibold)).lineLimit(1).fixedSize()
-                .foregroundStyle(on ? Color.white.opacity(0.92) : Theme.dim.opacity(0.7))
+            Circle().stroke(on ? color : Theme.line, lineWidth: Theme.stroke)
+                .background(Circle().fill(on ? color : .clear))
+                .frame(width: 7, height: 7)
+            Text(text.uppercased()).font(Theme.wide(11, .semibold)).kerning(1.2).lineLimit(1).fixedSize()
+                .foregroundStyle(on ? Theme.ink : Theme.dim)
         }
-        .padding(.horizontal, 9).padding(.vertical, 6)
-        .background(Capsule().fill(Color(red: 0.043, green: 0.063, blue: 0.098)).overlay(Capsule().stroke(Theme.line, lineWidth: 1)))
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(on ? Theme.ink : Theme.line, lineWidth: Theme.stroke))
     }
 }
 
-/// Recessed LCD window.
+/// An outlined readout window.
 struct LCDBackground: View {
     var body: some View {
-        RoundedRectangle(cornerRadius: 10)
-            .fill(LinearGradient(colors: [Theme.lcd, Color(red: 0.024, green: 0.102, blue: 0.133)], startPoint: .top, endPoint: .bottom))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.lcdLine, lineWidth: 1))
-            .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
+        RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: Theme.stroke)
     }
 }
 
@@ -199,12 +192,12 @@ struct Crossfader: View {
     var body: some View {
         VStack(spacing: 4) {
             HStack {
-                Text("Crossfader").font(.caption).foregroundStyle(.secondary)
+                Text("CROSSFADER").font(Theme.wide(11, .semibold)).kerning(1.2).foregroundStyle(Theme.dim)
                 Spacer()
                 Text(String(format: "%.0f%% open", model.state.gain * 100))
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .font(Theme.lcdFont(13)).foregroundStyle(Theme.dim)
             }
-            Slider(value: model.binding(\.vfX), in: 0...1).tint(Theme.orange)
+            Slider(value: model.binding(\.vfX), in: 0...1).tint(Theme.green)
         }
     }
 }
@@ -216,28 +209,39 @@ struct FaderPad: View {
     var body: some View {
         let cuts = model.settings.padCuts
         let soundOn = cuts ? !down : down
-        RoundedRectangle(cornerRadius: 18)
-            .fill(soundOn
-                  ? AnyShapeStyle(RadialGradient(colors: [Color(red: 1, green: 0.63, blue: 0.35).opacity(down ? 0.8 : 0.55),
-                                                          Theme.orange.opacity(0.22), Color(red: 0.47, green: 0.12, blue: 0).opacity(0.35)],
-                                                 center: .top, startRadius: 0, endRadius: 220))
-                  : AnyShapeStyle(LinearGradient(colors: [Color(red: 0.12, green: 0.15, blue: 0.21), Theme.panel], startPoint: .top, endPoint: .bottom)))
+        let col = soundOn ? Theme.green : Theme.red
+        RoundedRectangle(cornerRadius: 12)
+            .fill(down ? col : .clear)
+            .background(Hatch(color: col.opacity(soundOn && !down ? 0.35 : 0)).clipShape(RoundedRectangle(cornerRadius: 12)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(col, lineWidth: Theme.stroke))
             .overlay {
                 VStack(spacing: 4) {
                     Text(cuts ? (down ? "CUT" : "TAP TO CUT") : (down ? "OPEN" : "HOLD TO OPEN"))
-                        .font(Theme.wide(14, .bold))
-                    Text(soundOn ? "SOUND ON" : "SOUND OFF").font(Theme.wide(8, .semibold)).foregroundStyle(.white.opacity(0.6))
+                        .font(Theme.wide(20, .semibold)).kerning(3)
+                    Text(soundOn ? "SOUND ON" : "SOUND OFF").font(Theme.wide(11, .semibold)).kerning(2)
+                        .foregroundStyle(down ? Color.black.opacity(0.7) : Theme.dim)
                 }
+                .foregroundStyle(down ? Color.black : col)
             }
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(soundOn ? Color(red: 1, green: 0.54, blue: 0.24) : Theme.line, lineWidth: 1))
-            .shadow(color: soundOn ? Theme.orange.opacity(0.4) : .clear, radius: 12)
-            .scaleEffect(down ? 0.99 : 1)
             .frame(height: 84)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { _ in if !down { down = true; model.setPad(down: true) } }
                 .onEnded { _ in down = false; model.setPad(down: false) })
             .accessibilityLabel("Fader pad")
+    }
+}
+
+/// Fine diagonal hatching, for "on" areas without a solid fill.
+struct Hatch: View {
+    let color: Color
+    var body: some View {
+        Canvas { ctx, sz in
+            var p = Path()
+            var x: CGFloat = -sz.height
+            while x < sz.width { p.move(to: CGPoint(x: x, y: sz.height)); p.addLine(to: CGPoint(x: x + sz.height, y: 0)); x += 8 }
+            ctx.stroke(p, with: .color(color), lineWidth: 1)
+        }
     }
 }
 
@@ -250,7 +254,7 @@ struct Transport: View {
             }
             TransportButton(title: model.state.frozen ? "Frozen" : "Freeze", icon: "snowflake",
                             lit: model.state.frozen, color: Theme.amber) { model.toggleFreeze() }
-            TransportButton(title: "Live", icon: "forward.end.fill", lit: false, color: accent) { model.jumpToLive() }
+            TransportButton(title: "Live", icon: "forward.end", lit: false, color: Theme.blue) { model.jumpToLive() }
         }
         .frame(height: 54)
     }
@@ -263,18 +267,14 @@ struct TransportButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: icon).font(.headline)
-                Text(title.uppercased()).font(Theme.wide(9, .bold)).lineLimit(1).minimumScaleFactor(0.7)
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 17, weight: .regular))
+                Text(title.uppercased()).font(Theme.wide(12, .semibold)).kerning(1.5).lineLimit(1).minimumScaleFactor(0.7)
             }
-            .foregroundStyle(Color(red: 0.06, green: 0.075, blue: 0.1))
+            .foregroundStyle(lit ? Color.black : color)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(lit ? AnyShapeStyle(color) : AnyShapeStyle(Theme.chrome))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 0.36, green: 0.4, blue: 0.45), lineWidth: 1))
-                    .shadow(color: lit ? color.opacity(0.55) : .black.opacity(0.5), radius: lit ? 10 : 3, y: lit ? 0 : 2)
-            )
+            .background(RoundedRectangle(cornerRadius: 10).fill(lit ? color : .clear))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(color, lineWidth: Theme.stroke))
         }
         .buttonStyle(.plain)
     }
@@ -286,15 +286,14 @@ struct HoldButton: View {
     let action: (Bool) -> Void
     @State private var down = false
     var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon).font(.headline)
-            Text(title.uppercased()).font(Theme.wide(9, .bold))
+        VStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 17, weight: .regular))
+            Text(title.uppercased()).font(Theme.wide(12, .semibold)).kerning(1.5)
         }
-        .foregroundStyle(Color(red: 0.06, green: 0.075, blue: 0.1))
+        .foregroundStyle(down ? Color.black : Theme.red)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: 14).fill(down ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(Theme.chrome))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 0.36, green: 0.4, blue: 0.45), lineWidth: 1))
-            .shadow(color: down ? Theme.orange.opacity(0.6) : .black.opacity(0.5), radius: down ? 10 : 3))
+        .background(RoundedRectangle(cornerRadius: 10).fill(down ? Theme.red : .clear))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.red, lineWidth: Theme.stroke))
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 0)
             .onChanged { _ in if !down { down = true; action(true) } }
@@ -314,25 +313,26 @@ struct Meters: View {
     private func bar(_ label: String, _ pk: Double) -> some View {
         let db = 20 * log10(max(pk, 1e-5)), frac = max(0, min(1, (db + 60) / 60))
         return HStack(spacing: 8) {
-            Text(label).font(Theme.wide(8, .semibold)).foregroundStyle(Theme.dim).frame(width: 40, alignment: .leading)
-            LEDBar(level: frac).frame(height: 8)
+            Text(label).font(Theme.wide(11, .semibold)).kerning(1.2).foregroundStyle(Theme.dim).frame(width: 40, alignment: .leading)
+            LEDBar(level: frac).frame(height: 10)
         }
     }
 }
 
-/// Segmented LED meter: lime, then amber, then orange at the top.
+/// Segmented meter: thin outlined cells, green, then amber, then red at the top.
 struct LEDBar: View {
     let level: Double
     var body: some View {
         Canvas { ctx, sz in
-            let n = 32, gap: CGFloat = 2
+            let n = 36, gap: CGFloat = 2
             let w = (sz.width - gap * CGFloat(n - 1)) / CGFloat(n)
             let lit = Int((level * Double(n)).rounded())
             for i in 0..<n {
                 let f = Double(i) / Double(n)
-                let c: Color = f > 0.9 ? Theme.orange : f > 0.75 ? Theme.amber : Theme.lime
+                let c: Color = f > 0.88 ? Theme.red : f > 0.72 ? Theme.amber : Theme.green
                 let r = CGRect(x: CGFloat(i) * (w + gap), y: 0, width: w, height: sz.height)
-                ctx.fill(Path(roundedRect: r, cornerRadius: 1), with: .color(i < lit ? c : c.opacity(0.1)))
+                if i < lit { ctx.fill(Path(r), with: .color(c)) }
+                else { ctx.stroke(Path(r.insetBy(dx: 0.5, dy: 0.5)), with: .color(Theme.line), lineWidth: 1) }
             }
         }
     }
@@ -352,54 +352,43 @@ struct PlatterView: View {
             let locked = model.state.locked
             Canvas { ctx, sz in
                 let c = CGPoint(x: sz.width / 2, y: sz.height / 2), r = min(sz.width, sz.height) / 2 - 2
+                let lw: CGFloat = max(1.5, r / 110)
                 func disc(_ rr: CGFloat) -> Path { Path(ellipseIn: CGRect(x: c.x - rr, y: c.y - rr, width: 2 * rr, height: 2 * rr)) }
-                // brushed-chrome platter
-                ctx.fill(disc(r), with: .linearGradient(Gradient(stops: [
-                    .init(color: Color(white: 0.96), location: 0), .init(color: Color(red: 0.6, green: 0.64, blue: 0.68), location: 0.35),
-                    .init(color: Color(white: 0.91), location: 0.5), .init(color: Color(red: 0.49, green: 0.53, blue: 0.58), location: 0.7),
-                    .init(color: Color(white: 0.86), location: 1)]),
-                    startPoint: CGPoint(x: c.x - r, y: c.y - r), endPoint: CGPoint(x: c.x + r, y: c.y + r)))
-                // strobe dots: four rows; the second glows orange when locked at 1×
-                for row in 0..<4 {
-                    let rr = r - r * 0.04 - CGFloat(row) * r * 0.045, nDots = 72 - row * 4
-                    for i in 0..<nDots {
-                        let a = angle + Double(i) / Double(nDots) * 2 * .pi
-                        let p = CGPoint(x: c.x + cos(a) * rr, y: c.y + sin(a) * rr)
-                        let dr = max(1, r * 0.011)
-                        ctx.fill(Path(ellipseIn: CGRect(x: p.x - dr, y: p.y - dr, width: 2 * dr, height: 2 * dr)),
-                                 with: .color(locked && row == 1 ? Theme.orange : Color(red: 0.27, green: 0.3, blue: 0.35)))
-                    }
+                ctx.stroke(disc(r - lw), with: .color(Theme.ink), lineWidth: lw)            // platter edge
+                // strobe ticks: green and solid at 1×
+                var ticks = Path()
+                for i in 0..<60 {
+                    let a = angle + Double(i) / 60 * 2 * .pi
+                    let r1 = r - lw * 4, r2 = r - lw * (i % 5 == 0 ? 10 : 7)
+                    ticks.move(to: CGPoint(x: c.x + cos(a) * r1, y: c.y + sin(a) * r1))
+                    ticks.addLine(to: CGPoint(x: c.x + cos(a) * r2, y: c.y + sin(a) * r2))
                 }
-                // black vinyl and grooves
-                let vr = r * 0.8
-                ctx.fill(disc(vr), with: .color(Color(red: 0.027, green: 0.031, blue: 0.043)))
-                for k in stride(from: 0.46, to: 0.98, by: 0.035) {
-                    ctx.stroke(disc(vr * k), with: .color(Color(red: 0.08, green: 0.1, blue: 0.14)), lineWidth: 1)
+                ctx.stroke(ticks, with: .color(locked ? Theme.green : Theme.dim), style: StrokeStyle(lineWidth: lw, lineCap: .round))
+                let vr = r * 0.84
+                ctx.stroke(disc(vr), with: .color(Theme.ink), lineWidth: lw)                  // record edge
+                for k in 0..<5 {                                                              // grooves
+                    ctx.stroke(disc(vr * (0.88 - CGFloat(k) * 0.1)), with: .color(Theme.line),
+                               style: StrokeStyle(lineWidth: lw, dash: k % 2 == 1 ? [lw * 2, lw * 4] : []))
                 }
-                ctx.fill(disc(vr), with: .linearGradient(Gradient(colors: [.clear, Theme.cyan.opacity(0.10), Theme.orange.opacity(0.08), .clear]),
-                                                         startPoint: CGPoint(x: c.x - vr, y: c.y - vr), endPoint: CGPoint(x: c.x + vr, y: c.y + vr)))
-                // label, rotating with the record
-                let lr = r * 0.34
-                ctx.fill(disc(lr), with: .radialGradient(Gradient(colors: [Color(red: 1, green: 0.69, blue: 0.48), locked ? Theme.orange : Color(red: 0.85, green: 0.31, blue: 0.05)]),
-                                                         center: CGPoint(x: c.x - lr * 0.3, y: c.y - lr * 0.35), startRadius: 2, endRadius: lr * 1.3))
-                ctx.stroke(disc(lr * 0.8), with: .color(.black.opacity(0.3)), lineWidth: 1.5)
+                // the one filled object: the label, turning with the record
+                let lr = r * 0.3
+                ctx.fill(disc(lr), with: .color(Theme.blue))
+                ctx.stroke(disc(lr * 0.73), with: .color(.black), lineWidth: lw)
                 var lab = ctx
                 lab.translateBy(x: c.x, y: c.y)
                 lab.rotate(by: .radians(angle))
-                lab.draw(Text("LIVESKRATCH").font(.system(size: max(7, lr * 0.2), weight: .black).width(.expanded))
-                            .foregroundStyle(Color(red: 0.09, green: 0.03, blue: 0)), at: CGPoint(x: 0, y: -lr * 0.28))
-                lab.draw(Text("LS-2000 · 33⅓").font(.system(size: max(6, lr * 0.14), design: .monospaced))
-                            .foregroundStyle(Color(red: 0.09, green: 0.03, blue: 0)), at: CGPoint(x: 0, y: lr * 0.34))
-                // cue marker on the vinyl
+                lab.draw(Text("LIVESKRATCH").font(.system(size: max(7, lr * 0.24), weight: .semibold).width(.condensed))
+                            .foregroundStyle(Color.black), at: CGPoint(x: 0, y: -lr * 0.2))
+                lab.draw(Text("33⅓").font(.system(size: max(6, lr * 0.16), weight: .semibold).width(.condensed))
+                            .foregroundStyle(Color.black), at: CGPoint(x: 0, y: lr * 0.35))
+                // cue line
                 var mark = Path()
-                mark.move(to: CGPoint(x: c.x + cos(angle - .pi / 2) * vr * 0.62, y: c.y + sin(angle - .pi / 2) * vr * 0.62))
-                mark.addLine(to: CGPoint(x: c.x + cos(angle - .pi / 2) * vr * 0.97, y: c.y + sin(angle - .pi / 2) * vr * 0.97))
-                ctx.stroke(mark, with: .color(.white), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                // spindle
-                ctx.fill(disc(max(3, r * 0.03)), with: .radialGradient(Gradient(colors: [.white, Color(red: 0.49, green: 0.53, blue: 0.58)]),
-                                                                        center: c, startRadius: 0, endRadius: r * 0.03))
+                mark.move(to: CGPoint(x: c.x + cos(angle - .pi / 2) * lr * 1.2, y: c.y + sin(angle - .pi / 2) * lr * 1.2))
+                mark.addLine(to: CGPoint(x: c.x + cos(angle - .pi / 2) * (vr - lw * 3), y: c.y + sin(angle - .pi / 2) * (vr - lw * 3)))
+                ctx.stroke(mark, with: .color(Theme.red), style: StrokeStyle(lineWidth: lw * 2, lineCap: .round))
+                ctx.fill(disc(r * 0.025), with: .color(.black))
+                ctx.stroke(disc(r * 0.025), with: .color(Theme.ink), lineWidth: lw)
             }
-            .shadow(color: .black.opacity(0.6), radius: 14, y: 10)
             .frame(width: size, height: size)
             .contentShape(Circle())
             .gesture(DragGesture(minimumDistance: 0)
@@ -432,22 +421,31 @@ struct TapeView: View {
     var body: some View {
         Canvas { ctx, sz in
             let bins = model.bins, n = bins.count, head = model.binHead
-            ctx.fill(Path(roundedRect: CGRect(origin: .zero, size: sz), cornerRadius: 10), with: .color(Theme.lcd))
-            ctx.stroke(Path(roundedRect: CGRect(origin: .zero, size: sz).insetBy(dx: 0.5, dy: 0.5), cornerRadius: 10), with: .color(Theme.lcdLine), lineWidth: 1)
+            let frame = CGRect(origin: .zero, size: sz).insetBy(dx: 0.75, dy: 0.75)
+            ctx.stroke(Path(roundedRect: frame, cornerRadius: 8), with: .color(Theme.line), lineWidth: Theme.stroke)
             let w = sz.width / CGFloat(n), mid = sz.height / 2
-            var p = Path()
-            for i in 0..<n {
-                let v = CGFloat(min(1, bins[(head + i) % n] * 1.4))
-                p.addRect(CGRect(x: CGFloat(i) * w, y: mid - v * mid * 0.9, width: max(1, w), height: max(1, v * mid * 1.8)))
-            }
-            ctx.fill(p, with: .color(Theme.cyan.opacity(0.55)))
+            var center = Path(); center.move(to: CGPoint(x: 0, y: mid)); center.addLine(to: CGPoint(x: sz.width, y: mid))
+            ctx.stroke(center, with: .color(Theme.line), lineWidth: 1)
             let s = model.state
+            // the envelope as two thin lines
+            for sign in [-1.0, 1.0] {
+                var p = Path()
+                var i = 0
+                while i < n {
+                    let v = CGFloat(min(1, max(bins[(head + i) % n], bins[(head + i + 1) % n]).squareRoot()))
+                    let pt = CGPoint(x: CGFloat(i) * w, y: mid + CGFloat(sign) * v * (mid - 5))
+                    if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+                    i += 2
+                }
+                ctx.stroke(p, with: .color(s.frozen ? Theme.amber : Theme.ink), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+            }
             if s.frozen {
                 let lw = CGFloat(Double(s.loopLen) / 256) * w
-                ctx.fill(Path(CGRect(x: sz.width - lw, y: 0, width: lw, height: sz.height)), with: .color(Theme.amber.opacity(0.12)))
+                ctx.stroke(Path(roundedRect: CGRect(x: sz.width - lw + 2, y: 3, width: lw - 4, height: sz.height - 6), cornerRadius: 4),
+                           with: .color(Theme.amber), style: StrokeStyle(lineWidth: Theme.stroke, dash: [3, 5]))
             }
             let x = sz.width - CGFloat(s.lag / 256) * w
-            ctx.fill(Path(CGRect(x: x - 1, y: 0, width: 2, height: sz.height)), with: .color(accent))
+            ctx.fill(Path(CGRect(x: x - 1, y: 0, width: 2, height: sz.height)), with: .color(Theme.red))
         }
     }
 }
@@ -465,9 +463,9 @@ struct SliderRow: View {
             HStack {
                 Text(label)
                 Spacer()
-                Text(format(value)).monospacedDigit().foregroundStyle(.secondary)
+                Text(format(value)).font(Theme.lcdFont(17)).foregroundStyle(Theme.blue)
             }
-            Slider(value: $value, in: range)
+            Slider(value: $value, in: range).tint(Theme.green)
         }
     }
 }
@@ -539,7 +537,7 @@ struct CalibrateSection: View {
         Section {
             Button { model.calibrate() } label: { Label("Calibrate", systemImage: "scope") }
             Text(model.calMessage).font(.footnote)
-                .foregroundStyle(model.calOK == true ? Theme.lime : model.calOK == false ? Theme.orange : Theme.dim)
+                .foregroundStyle(model.calOK == true ? Theme.green : model.calOK == false ? Theme.red : Theme.dim)
             Toggle("Flip direction", isOn: model.binding(\.flip))
         } header: {
             Text("Calibrate")
