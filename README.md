@@ -1,15 +1,18 @@
-# Scratcher
+# LiveSkratch
 
-A live-input DVS for the **Headache Sound WOW** (Wow & Flutter machine). The WOW plays a control tone instead of music. Scratcher decodes the platter's motion from that tone and uses it to scratch **whatever audio is coming in right now**: a synth, a mic, a drum machine.
+A live-input DVS for the **Headache Sound WOW** (Wow & Flutter machine). The WOW plays a control tone instead of music. LiveSkratch decodes the platter's motion from that tone and uses it to scratch **whatever audio is coming in right now**: a synth, a mic, a drum machine.
 
-It runs in Chrome as a single self-contained page: **https://samuelling.github.io/Scratcher/**
+It comes in two forms:
+
+- **iPad / iPhone app + AUv3 plugin** (`ios/`): native, lowest latency, full interface channel routing, a one-switch WOW setup screen, and an Audio Unit effect for AUM and other hosts.
+- **Web app** for Chrome on a Mac, as a single self-contained page: **https://samuelling.github.io/Scratcher/**
 
 ## How it works
 
 - **Tape.** Live input is written continuously into a 32-second ring buffer.
 - **Needle.** A read head is driven by the decoded platter motion. Hands off at 1× and it rides just behind live, so you hear the input straight through. Pull back and you're scratching the last few seconds. Let go and it snaps back to live, or stays behind if you prefer that.
 - **Freeze.** Stops the tape and loops the last N seconds, so you can scratch a captured phrase like a record.
-- **Fader.** The WOW's own crossfader becomes Scratcher's fader, read one of two ways:
+- **Fader.** The WOW's own crossfader becomes LiveSkratch's fader, read one of two ways:
   - **Pilot tone (recommended).** In the WOW's `wow_settings.txt`, set `fader_left = beat` and `fader_right = beat`, and put the pilot in the `beats` folder (or let `wow/scratcher-mode.command` do all of this). The fader then cuts an 18 kHz pilot tone whose level is the fader position, while the control tone is never cut, so the platter stays tracked through every cut. Two wide notches remove the pilot before decoding. A low-pass would rotate the 3rd harmonic's phase and flip direction above about 2×. Calibrate measures the pilot's exact frequency and level.
   - **Tone level.** The fader cuts the control tone itself. It's simpler, but platter motion is invisible while the fader is closed.
 - **Virtual fader.** An on-screen cut fader with cut-in, curve and hamster settings, used alone or together with the WOW's fader.
@@ -43,3 +46,19 @@ test/           test_wow.js: accuracy under true and WOW-style reverse; test_pil
 ```
 
 Run `python3 build.py` after editing anything in `src/`.
+
+
+## iPad / iPhone (ios/)
+
+Open `ios/LiveSkratch.xcodeproj` in Xcode 16+, pick your iPad, and press Run. Two targets:
+
+- **LiveSkratch**, the app. Pick the WOW's input channel, the live audio channel(s) and the output pair under *Audio routing*. With nothing plugged in it scratches a built-in loop (synthesised "ahhh" and "fresh" stabs over a beat); *Load loop…* swaps in any audio file and keeps it as the default.
+- **LiveSkratchAU**, an AUv3 effect ("Sam Ling: LiveSkratch"). In AUM, make a stereo channel from two interface inputs, the WOW on the left and the live audio on the right, and insert LiveSkratch. Crossfader, cut, freeze, jump-to-live, gain and source are host parameters you can map to MIDI.
+
+**WOW setup without Terminal.** Plug the WOW into the iPad, open *WOW setup*, choose the WOW's drive in Files once, then flip *Normal / LiveSkratch*. The switch edits `wow_settings.txt` (keeping its alignment and line endings), swaps the tone files in, and parks your own beats and samples in a `LiveSkratch/` folder on the WOW, with a backup of your settings, so switching back works from any device. It also recognises a WOW switched by `wow/scratcher-mode.command`.
+
+Layout: `ios/Core` is the DSP (a line-for-line port of `src/dsp.js` and `src/worklet.js`, no allocation on the audio thread), `ios/Shared` the settings, UI and loop code both targets use, `ios/App` the RemoteIO host and WOW setup, `ios/AUv3` the plugin. The DSP has command-line tests that also run on Linux:
+
+```
+swiftc -O ios/Core/*.swift ios/Tests/main.swift -o /tmp/liveskratch-tests && /tmp/liveskratch-tests
+```

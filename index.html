@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SCRATCHER — live DVS for the WOW</title>
+<title>LIVESKRATCH — live DVS for the WOW</title>
 <style>
   :root {
     --bg: #121212; --panel: #1b1b1b; --line: #2c2c2c; --ink: #e9e5dc; --dim: #8b867c;
@@ -85,7 +85,7 @@
 <body>
 <div id="gate-overlay">
   <div class="box">
-    <h2>SCRATCHER<span style="color:var(--hot)">.</span></h2>
+    <h2>LIVESKRATCH<span style="color:var(--hot)">.</span></h2>
     <p>Scratch live audio with the Headache Sound WOW. Chrome on Mac, ideally through an audio interface. Use headphones if your live source is a microphone.</p>
     <button class="primary" id="startBtn">Start audio</button>
     <p class="err" id="startErr"></p>
@@ -93,7 +93,7 @@
 </div>
 
 <header>
-  <h1>SCRATCHER<span>.</span></h1>
+  <h1>LIVESKRATCH<span>.</span></h1>
   <div class="sub">live-input DVS · WOW control tone → scratch whatever is coming in</div>
   <div class="spacer"></div>
   <div class="sub" id="latency"></div>
@@ -161,7 +161,7 @@
           <li>Download the <b>control tone</b> (right panel) and load it onto the WOW as a <b>sample</b>, the same way you load any scratch sample.</li>
           <li><b>Pilot-fader mode (recommended):</b> put the pilot WAV in the WOW's <b>beats</b> folder, set <code>fader_left = beat</code> and <code>fader_right = beat</code> in wow_settings.txt, center the mix knob, keep delay/reverb off. <b>Tone-level mode:</b> balance fully to sample instead.</li>
           <li>WOW output → an input on your interface. Live audio (synth, mic, OP-1, anything) → another input. Pick both above.</li>
-          <li>Motor on, hands off, fader open → press <b>Calibrate</b>. It measures 1× speed and the WOW's output level, so the WOW crossfader becomes Scratcher's fader.</li>
+          <li>Motor on, hands off, fader open → press <b>Calibrate</b>. It measures 1× speed and the WOW's output level, so the WOW crossfader becomes LiveSkratch's fader.</li>
           <li>Scratch. Hands off and the needle rides at live. Pull back and you're scratching the last few seconds; let go and it snaps back to live, unless Return is set to <b>Stay</b>.</li>
           <li>Hit <b>Freeze</b> to capture a phrase and scratch it like a record. The tape stops recording and loops the last N seconds.</li>
         </ol>
@@ -174,7 +174,7 @@
       <h2>Routing</h2>
       <div class="row" id="outRow"><label>Output to</label><select id="outDev" class="grow"></select></div>
       <div class="row"><label>channels</label><select id="outCh"></select><span class="note" style="margin:0" id="outChNote"></span></div>
-      <p class="note" style="margin-top:0">If your interface's direct monitoring blends the WOW tone into outputs 1–2, send Scratcher to another pair (e.g. 3–4) or another device.</p>
+      <p class="note" style="margin-top:0">If your interface's direct monitoring blends the WOW tone into outputs 1–2, send LiveSkratch to another pair (e.g. 3–4) or another device.</p>
       <div class="row"><label>Control (WOW)</label><select id="ctrlDev" class="grow"></select></div>
       <div class="row"><label>channel</label>
         <div class="seg" id="ctrlCh"><button data-v="L">L</button><button data-v="R">R</button><button data-v="M">L+R</button></div>
@@ -993,7 +993,7 @@ function drawPlatter() {
   pctx.fillStyle = st.locked ? '#ff5a1f' : '#e9e5dc';
   pctx.beginPath(); pctx.arc(0, 0, R * 0.34, 0, Math.PI * 2); pctx.fill();
   pctx.fillStyle = '#111'; pctx.font = `800 ${W * 0.042}px ui-monospace, Menlo, monospace`; pctx.textAlign = 'center';
-  pctx.fillText('SCRATCHER', 0, -W * 0.03);
+  pctx.fillText('LIVESKRATCH', 0, -W * 0.03);
   pctx.font = `600 ${W * 0.025}px ui-monospace, Menlo, monospace`;
   pctx.fillText('LIVE · 33⅓', 0, W * 0.035);
   // cue marker
@@ -1133,7 +1133,7 @@ seg('liveCh', 'liveCh', () => node && applyRouting());
 seg('mode', 'mode', () => param({ mode: S.mode }));
 const wowReadNote = () => { $('wowReadNote').innerHTML = S.wowRead === 'pilot'
   ? 'WOW <code>wow_settings.txt</code>: <b>fader_left = beat</b>, <b>fader_right = beat</b>. Pilot WAV in the <b>beats</b> folder, control tone in <b>samples</b>, mix knob centered. The platter stays tracked through every cut.'
-  : 'Fader cuts the control tone itself. Simple, but Scratcher can’t see the platter while the fader is closed.'; };
+  : 'Fader cuts the control tone itself. Simple, but LiveSkratch can’t see the platter while the fader is closed.'; };
 seg('wowRead', 'wowRead', () => { param({ wowRead: S.wowRead }); wowReadNote(); });
 wowReadNote();
 seg('faderMode', 'faderMode', () => { store.set('faderMode2', S.faderMode); param({ faderMode: S.faderMode }); });
