@@ -4,7 +4,11 @@ class FlutterProcessor extends AudioWorkletProcessor {
     super();
     const sr = sampleRate;
     this.dec = new ToneDecoder(sr);
+    this.quad = new QuadDecoder(sr);
+    this.control = 'wow';   // 'wow' (mono WOW tone) | 'timecode' (stereo Serato / Traktor / LiveSkratch)
     this.pilot = new PilotReader(sr);
+    this.pilotR = new PilotReader(sr);
+    this.pad = { on: false, open: true };   // tap-pad fader
     this.wowRead = 'level'; // 'level' | 'pilot'
     this.pilotRef = 0.3;
     this.pilotGain = (f) => this.pilot.lnGain(f);
@@ -41,12 +45,17 @@ class FlutterProcessor extends AudioWorkletProcessor {
         if ('faderHi' in m) this.faderHi = m.faderHi;
         if ('gate' in m) this.userGate = m.gate;
         if ('toneRef' in m) this.toneRef = m.toneRef;
-        if ('gate' in m || 'toneRef' in m) d.gate = Math.max(this.userGate, 0.1 * this.toneRef);
-        if ('flip' in m) d.flip = m.flip;
+        if ('gate' in m || 'toneRef' in m) d.gate = this.quad.gate = Math.max(this.userGate, 0.1 * this.toneRef);
+        if ('flip' in m) d.flip = this.quad.flip = m.flip;
+        if ('control' in m) this.control = m.control;
+        if ('carrierHz' in m) this.quad.carrierHz = m.carrierHz;
+        if ('balance' in m) this.quad.balance = m.balance;
+        if ('padStyle' in m) this.pad.on = m.padStyle;
+        if ('padOpen' in m) this.pad.open = m.padOpen;
         if ('calib' in m) d.calib = m.calib;
         if ('refLevel' in m) this.refLevel = m.refLevel;
         if ('wowRead' in m) this.wowRead = m.wowRead;
-        if ('pilotHz' in m) this.pilot.setFreq(m.pilotHz);
+        if ('pilotHz' in m) { this.pilot.setFreq(m.pilotHz); this.pilotR.setFreq(m.pilotHz); }
         if ('pilotRef' in m) this.pilotRef = m.pilotRef;
         if ('outGain' in m) e.outGain = m.outGain;
         if ('sim' in m) this.sim.on = m.sim;
@@ -75,6 +84,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
 
   process(inputs, outputs) {
     const ctrlIn = inputs[0] && inputs[0][0];
+    const ctrlInR = inputs[0] && inputs[0][1];
+    const stereo = this.control === 'timecode', q = this.quad;
     const live = inputs[1];
     const liveL = live && live[0];
     const liveR = live && (live[1] || live[0]);
@@ -86,35 +97,46 @@ class FlutterProcessor extends AudioWorkletProcessor {
     const motorK = 1 - Math.exp(-1 / (0.09 * sr));
     // virtual cut fader: deck on the left; open from the edge up to the cut-in point
     const vfx = this.vf.hamster ? 1 - this.vf.x : this.vf.x;
-    const vfGain = 1 - faderCurve(vfx, this.vf.cut, this.vf.cut + this.vf.width);
+    const vfGain = this.pad.on ? (this.pad.open ? 1 : 0) : 1 - faderCurve(vfx, this.vf.cut, this.vf.cut + this.vf.width);
 
     for (let i = 0; i < N; i++) {
       let c = ctrlIn ? ctrlIn[i] : 0;
+      let c2 = ctrlInR ? ctrlInR[i] : 0;
+      const usePilot = this.wowRead === 'pilot';
       if (sim.on) {
         const target = sim.hand ? sim.handV : (sim.motor ? 1 : 0);
         sim.v += (target - sim.v) * (sim.hand ? handK : motorK);
-        sim.theta += 2 * Math.PI * F0 * sim.v / sr;
-        const span = 2 * Math.PI * AM_CYCLES; // wrap on whole loudness periods
-        if (sim.theta > 1e6) sim.theta -= span * Math.floor(sim.theta / span);
-        if (this.wowRead === 'pilot') {
+        let pil = 0;
+        if (usePilot) {
           sim.ph = (sim.ph || 0) + 2 * Math.PI * PILOT_HZ / sr;
           if (sim.ph > 6.283185307179586) sim.ph -= 6.283185307179586;
           sim.fg = (sim.fg || 0) + (sim.fader - (sim.fg || 0)) * 0.03; // ~1 ms digital fader ramp
-          c = 0.35 * toneSample(sim.theta) + 0.35 * sim.fg * Math.sin(sim.ph) + this.rnd() * 2e-4;
+          pil = 0.35 * sim.fg * Math.sin(sim.ph);
+        }
+        const lvl = usePilot ? 0.35 : 0.445 * sim.fader;
+        if (stereo) {
+          sim.q = (sim.q || 0) + 2 * Math.PI * q.carrierHz * sim.v / sr;
+          if (Math.abs(sim.q) > 1e6) sim.q %= 2 * Math.PI;
+          c = lvl * Math.cos(sim.q) + pil + this.rnd() * 2e-4;
+          c2 = lvl * Math.sin(sim.q) + pil + this.rnd() * 2e-4;
         } else {
-          c = 0.445 * sim.fader * toneSample(sim.theta) + this.rnd() * 2e-4;
+          sim.theta += 2 * Math.PI * F0 * sim.v / sr;
+          const span = 2 * Math.PI * AM_CYCLES; // wrap on whole loudness periods
+          if (sim.theta > 1e6) sim.theta -= span * Math.floor(sim.theta / span);
+          c = lvl * toneSample(sim.theta) + pil + this.rnd() * 2e-4;
         }
       }
-      const usePilot = this.wowRead === 'pilot';
       d.gainLn = usePilot ? this.pilotGain : null;
       const pc = this.pilot.process(c);           // always runs: measures the pilot even in tone-level mode
-      const cc = usePilot ? pc : c;
-      const r = d.process(cc);
+      let r;
+      if (stereo) { const pc2 = this.pilotR.process(c2); r = q.process(usePilot ? pc : c, usePilot ? pc2 : c2); }
+      else r = d.process(usePilot ? pc : c);
+      const cActive = stereo ? q.active : d.active, cEnv = stereo ? q.env : d.env;
 
       let g = 1;
       const fm = this.faderMode;
       if (fm === 'wow' || fm === 'both') {
-        const lvl = usePilot ? this.pilot.amp / Math.max(1e-4, this.pilotRef) : d.env / Math.max(1e-4, this.refLevel);
+        const lvl = usePilot ? this.pilot.amp / Math.max(1e-4, this.pilotRef) : cEnv / Math.max(1e-4, this.refLevel);
         g = faderCurve(lvl, this.faderLo, this.faderHi);
       }
       if (fm === 'virtual' || fm === 'both') g *= vfGain;
@@ -141,9 +163,10 @@ class FlutterProcessor extends AudioWorkletProcessor {
       const cal = this.cal;
       if (cal) {
         cal.n++;
-        if (d.active) cal.active++;
-        if ((cal.n & 31) === 0 && d.active && d.rawSpeed > 0) cal.speeds.push(d.rawSpeed);
-        if ((cal.n & 31) === 0 && d.active) { cal.stat += d.dir; cal.statN++; cal.env += d.env; cal.envN++; } // mean direction while the motor runs
+        const rs = stereo ? q.rawSpeed : d.rawSpeed, cdir = stereo ? q.dir : d.dir;
+        if (cActive) cal.active++;
+        if ((cal.n & 31) === 0 && cActive && rs > 0) cal.speeds.push(rs);
+        if ((cal.n & 31) === 0 && cActive) { cal.stat += cdir; cal.statN++; cal.env += cEnv; cal.envN++; } // mean direction while the motor runs
         if (cal.n >= cal.N) {
           const s = cal.speeds.sort((a, b) => a - b);
           const med = s.length ? s[Math.floor(s.length / 2)] : 0;
@@ -152,6 +175,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
             type: 'calibrated', speed: med, spread: med ? (hi - lo) / med : 1,
             stat: cal.statN ? cal.stat / cal.statN : 0, env: cal.envN ? cal.env / cal.envN : 0,
             activeFrac: cal.active / cal.n, pilot: this.pilot.measured(),
+            balance: q.levelR > 1e-12 ? Math.sqrt(q.levelL / q.levelR) : 1,
           });
           this.cal = null;
         }
@@ -165,7 +189,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
       this.newBins.length = 0;
       this.port.postMessage({
         type: 'state', v: e.vs, rate: e.rate, lag: e.lag, locked: e.locked, frozen: e.frozen,
-        env: d.env, active: d.active, dir: d.dir, stat: d.lastStat, pos: d.posInt,
+        env: stereo ? q.env : d.env, active: stereo ? q.active : d.active, dir: stereo ? q.dir : d.dir,
+        stat: stereo ? 0 : d.lastStat, pos: stereo ? q.posInt : d.posInt,
         gain: e.gain, ctrlPk: this.ctrlPk, livePk: this.livePk, outPk: this.outPk,
         simV: sim.v, loopLen: e.loopLen, bins, pilotAmp: this.pilot.amp,
       }, bins ? [bins.buffer] : []);

@@ -67,6 +67,10 @@
   details ol { padding-left: 18px; margin: 10px 0 0; color: #cfcac0; font-size: 13px; }
   details li { margin-bottom: 6px; }
   kbd { font: 11px var(--mono); background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 4px; padding: 1px 5px; }
+  .pad { height: 84px; border-radius: 14px; border: 1.5px solid var(--hot); background: rgba(255,107,51,0.22); display: flex; flex-direction: column;
+         align-items: center; justify-content: center; gap: 2px; touch-action: none; user-select: none; cursor: pointer; margin-top: 4px; }
+  .pad b { font-size: 15px; } .pad span { font: 600 10px var(--mono); color: var(--dim); letter-spacing: .08em; }
+  .pad.off { border-color: #3a3a3a; background: #1c1c1c; } .pad.down { filter: brightness(1.35); }
   .xf { position: relative; height: 64px; margin-top: 4px; touch-action: none; cursor: ew-resize; user-select: none; }
   .xf .slot { position: absolute; left: 0; right: 0; top: 28px; height: 8px; background: #0a0a0a; border-radius: 4px; border: 1px solid #2c2c2c; }
   .xf .zone { position: absolute; top: 0; bottom: 0; background: rgba(89,211,140,0.35); border-radius: 4px; }
@@ -121,14 +125,19 @@
     </div>
 
     <div class="card">
-      <h2>Crossfader · <span id="xfState">open</span></h2>
+      <h2>Fader · <span id="xfState">open</span></h2>
+      <div class="row">
+        <div class="seg" id="faderStyle"><button data-v="pad">Tap pad</button><button data-v="slider">Slider</button></div>
+        <div class="seg" id="padMode"><button data-v="cuts">Touch cuts</button><button data-v="opens">Touch opens</button></div>
+      </div>
+      <div class="pad" id="pad"><b id="padLbl">Tap to cut</b><span id="padSub">sound on</span></div>
       <div class="xf" id="xf">
         <div class="slot"><div class="zone" id="xfZone"></div></div>
         <span class="lbl" style="left:0" id="xfLblA">SCRATCH ◂</span>
         <span class="lbl" style="right:0" id="xfLblB">▸ CUT</span>
         <div class="knob" id="xfKnob"></div>
       </div>
-      <p class="note">Drag the fader, or hold <kbd>C</kbd> to cut. The green zone is where the scratch is audible; set its size, curve and hamster in <b>Fader</b>.</p>
+      <p class="note" id="xfNote"></p>
     </div>
 
     <div class="card">
@@ -175,8 +184,14 @@
       <div class="row" id="outRow"><label>Output to</label><select id="outDev" class="grow"></select></div>
       <div class="row"><label>channels</label><select id="outCh"></select><span class="note" style="margin:0" id="outChNote"></span></div>
       <p class="note" style="margin-top:0">If your interface's direct monitoring blends the WOW tone into outputs 1–2, send LiveSkratch to another pair (e.g. 3–4) or another device.</p>
-      <div class="row"><label>Control (WOW)</label><select id="ctrlDev" class="grow"></select></div>
-      <div class="row"><label>channel</label>
+      <div class="row"><label>Control</label><select id="ctrlDev" class="grow"></select></div>
+      <div class="row"><label>signal</label>
+        <div class="seg" id="control"><button data-v="wow">WOW tone</button><button data-v="timecode">Stereo timecode</button></div>
+      </div>
+      <div class="row" id="tcRow"><label>timecode</label>
+        <div class="seg" id="tcType"><button data-v="1000">Serato · LiveSkratch</button><button data-v="2000">Traktor</button></div>
+      </div>
+      <div class="row" id="ctrlChRow"><label>channel</label>
         <div class="seg" id="ctrlCh"><button data-v="L">L</button><button data-v="R">R</button><button data-v="M">L+R</button></div>
       </div>
       <div class="row"><label>Live input</label><select id="liveDev" class="grow"></select></div>
@@ -242,6 +257,7 @@
       </div>
       <p class="note">Pilot tone (for <b>beats</b> folder, pilot-fader mode): 18 kHz · stereo 44.1 kHz · 10 s loop.</p>
       <div class="row"><button id="pilotBtn">Download pilot WAV</button></div>
+      <div class="row"><button id="tcBtn">Download stereo timecode (SC-1000 / SC-500)</button></div>
     </div>
   </aside>
 </main>
@@ -544,13 +560,68 @@ class PilotReader {
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { PILOT_HZ, Biquad, PilotReader });
 
+// ---------- stereo timecode (Serato / Traktor / LiveSkratch stereo): relative-mode quadrature decoder ----------
+// Same carrier on both channels a quarter-cycle apart: the pair traces a circle whose angle is the position within
+// a carrier cycle and whose turning direction is the platter's. Only speed and direction are needed here.
+class QuadDecoder {
+  constructor(sr) {
+    this.sr = sr; this.carrierHz = 1000; this.flip = false; this.gate = 0.0015; this.balance = 1;
+    this.hpA = 0; this.hpFor = -1;
+    this.xL = 0; this.yL = 0; this.xR = 0; this.yR = 0;
+    this.env = 0; this.active = false; this.prevPhase = 0; this.havePrev = false; this.phi = 0;
+    this.RING = 8192; this.ring = new Float64Array(this.RING); this.n = 0; this.filled = 0;
+    this.v = 0; this.dir = 1; this.rawSpeed = 0; this.posInt = 0; this.levelL = 0; this.levelR = 0;
+  }
+  process(l, r) {
+    const sr = this.sr, M = this.RING - 1;
+    if (this.carrierHz !== this.hpFor) { this.hpFor = this.carrierHz; this.hpA = Math.exp(-2 * Math.PI * Math.max(5, 0.02 * this.carrierHz) / sr); }
+    const a = this.hpA * (this.yL + l - this.xL); this.xL = l; this.yL = a;
+    const b0 = this.hpA * (this.yR + r - this.xR); this.xR = r; this.yR = b0;
+    const b = b0 * this.balance;
+    this.levelL += (a * a - this.levelL) * 0.0005; this.levelR += (b0 * b0 - this.levelR) * 0.0005;
+    const mag = Math.sqrt(a * a + b * b);
+    const relT = Math.max(0.002 * sr, 3 * sr / Math.max(50, this.carrierHz));
+    this.env = Math.max(mag, this.env * Math.exp(-1 / relT));
+    this.active = this.active ? this.env > this.gate : this.env > 2 * this.gate;  // hysteresis
+    if (!this.active) {
+      this.havePrev = false; this.v = 0; this.rawSpeed = 0;
+      this.ring[this.n & M] = this.phi; this.n++; this.filled = 0;
+      return 0;
+    }
+    if (mag < 0.5 * this.gate) { this.ring[this.n & M] = this.phi; this.n++; this.posInt += this.v; return this.v; }
+    const p = Math.atan2(b, a);
+    if (this.havePrev) {
+      let d = p - this.prevPhase;
+      if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
+      this.phi += d;
+    }
+    this.prevPhase = p; this.havePrev = true;
+    this.ring[this.n & M] = this.phi;
+    const W = Math.max(4, Math.min(4096, Math.round(sr / this.carrierHz)));
+    if (++this.filled > W) {
+      let s = (this.phi - this.ring[(this.n - W) & M]) / (2 * Math.PI * W * this.carrierHz / sr);
+      if (this.flip) s = -s;
+      this.v = s; this.rawSpeed = Math.abs(s);
+      if (Math.abs(s) > 0.02) this.dir = s > 0 ? 1 : -1;
+    }
+    this.n++;
+    this.posInt += this.v;
+    return this.v;
+  }
+}
+if (typeof module !== 'undefined') module.exports.QuadDecoder = QuadDecoder;
+
 // ---- AudioWorklet processor (appended after dsp.js) ----
 class FlutterProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     const sr = sampleRate;
     this.dec = new ToneDecoder(sr);
+    this.quad = new QuadDecoder(sr);
+    this.control = 'wow';   // 'wow' (mono WOW tone) | 'timecode' (stereo Serato / Traktor / LiveSkratch)
     this.pilot = new PilotReader(sr);
+    this.pilotR = new PilotReader(sr);
+    this.pad = { on: false, open: true };   // tap-pad fader
     this.wowRead = 'level'; // 'level' | 'pilot'
     this.pilotRef = 0.3;
     this.pilotGain = (f) => this.pilot.lnGain(f);
@@ -587,12 +658,17 @@ class FlutterProcessor extends AudioWorkletProcessor {
         if ('faderHi' in m) this.faderHi = m.faderHi;
         if ('gate' in m) this.userGate = m.gate;
         if ('toneRef' in m) this.toneRef = m.toneRef;
-        if ('gate' in m || 'toneRef' in m) d.gate = Math.max(this.userGate, 0.1 * this.toneRef);
-        if ('flip' in m) d.flip = m.flip;
+        if ('gate' in m || 'toneRef' in m) d.gate = this.quad.gate = Math.max(this.userGate, 0.1 * this.toneRef);
+        if ('flip' in m) d.flip = this.quad.flip = m.flip;
+        if ('control' in m) this.control = m.control;
+        if ('carrierHz' in m) this.quad.carrierHz = m.carrierHz;
+        if ('balance' in m) this.quad.balance = m.balance;
+        if ('padStyle' in m) this.pad.on = m.padStyle;
+        if ('padOpen' in m) this.pad.open = m.padOpen;
         if ('calib' in m) d.calib = m.calib;
         if ('refLevel' in m) this.refLevel = m.refLevel;
         if ('wowRead' in m) this.wowRead = m.wowRead;
-        if ('pilotHz' in m) this.pilot.setFreq(m.pilotHz);
+        if ('pilotHz' in m) { this.pilot.setFreq(m.pilotHz); this.pilotR.setFreq(m.pilotHz); }
         if ('pilotRef' in m) this.pilotRef = m.pilotRef;
         if ('outGain' in m) e.outGain = m.outGain;
         if ('sim' in m) this.sim.on = m.sim;
@@ -621,6 +697,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
 
   process(inputs, outputs) {
     const ctrlIn = inputs[0] && inputs[0][0];
+    const ctrlInR = inputs[0] && inputs[0][1];
+    const stereo = this.control === 'timecode', q = this.quad;
     const live = inputs[1];
     const liveL = live && live[0];
     const liveR = live && (live[1] || live[0]);
@@ -632,35 +710,46 @@ class FlutterProcessor extends AudioWorkletProcessor {
     const motorK = 1 - Math.exp(-1 / (0.09 * sr));
     // virtual cut fader: deck on the left; open from the edge up to the cut-in point
     const vfx = this.vf.hamster ? 1 - this.vf.x : this.vf.x;
-    const vfGain = 1 - faderCurve(vfx, this.vf.cut, this.vf.cut + this.vf.width);
+    const vfGain = this.pad.on ? (this.pad.open ? 1 : 0) : 1 - faderCurve(vfx, this.vf.cut, this.vf.cut + this.vf.width);
 
     for (let i = 0; i < N; i++) {
       let c = ctrlIn ? ctrlIn[i] : 0;
+      let c2 = ctrlInR ? ctrlInR[i] : 0;
+      const usePilot = this.wowRead === 'pilot';
       if (sim.on) {
         const target = sim.hand ? sim.handV : (sim.motor ? 1 : 0);
         sim.v += (target - sim.v) * (sim.hand ? handK : motorK);
-        sim.theta += 2 * Math.PI * F0 * sim.v / sr;
-        const span = 2 * Math.PI * AM_CYCLES; // wrap on whole loudness periods
-        if (sim.theta > 1e6) sim.theta -= span * Math.floor(sim.theta / span);
-        if (this.wowRead === 'pilot') {
+        let pil = 0;
+        if (usePilot) {
           sim.ph = (sim.ph || 0) + 2 * Math.PI * PILOT_HZ / sr;
           if (sim.ph > 6.283185307179586) sim.ph -= 6.283185307179586;
           sim.fg = (sim.fg || 0) + (sim.fader - (sim.fg || 0)) * 0.03; // ~1 ms digital fader ramp
-          c = 0.35 * toneSample(sim.theta) + 0.35 * sim.fg * Math.sin(sim.ph) + this.rnd() * 2e-4;
+          pil = 0.35 * sim.fg * Math.sin(sim.ph);
+        }
+        const lvl = usePilot ? 0.35 : 0.445 * sim.fader;
+        if (stereo) {
+          sim.q = (sim.q || 0) + 2 * Math.PI * q.carrierHz * sim.v / sr;
+          if (Math.abs(sim.q) > 1e6) sim.q %= 2 * Math.PI;
+          c = lvl * Math.cos(sim.q) + pil + this.rnd() * 2e-4;
+          c2 = lvl * Math.sin(sim.q) + pil + this.rnd() * 2e-4;
         } else {
-          c = 0.445 * sim.fader * toneSample(sim.theta) + this.rnd() * 2e-4;
+          sim.theta += 2 * Math.PI * F0 * sim.v / sr;
+          const span = 2 * Math.PI * AM_CYCLES; // wrap on whole loudness periods
+          if (sim.theta > 1e6) sim.theta -= span * Math.floor(sim.theta / span);
+          c = lvl * toneSample(sim.theta) + pil + this.rnd() * 2e-4;
         }
       }
-      const usePilot = this.wowRead === 'pilot';
       d.gainLn = usePilot ? this.pilotGain : null;
       const pc = this.pilot.process(c);           // always runs: measures the pilot even in tone-level mode
-      const cc = usePilot ? pc : c;
-      const r = d.process(cc);
+      let r;
+      if (stereo) { const pc2 = this.pilotR.process(c2); r = q.process(usePilot ? pc : c, usePilot ? pc2 : c2); }
+      else r = d.process(usePilot ? pc : c);
+      const cActive = stereo ? q.active : d.active, cEnv = stereo ? q.env : d.env;
 
       let g = 1;
       const fm = this.faderMode;
       if (fm === 'wow' || fm === 'both') {
-        const lvl = usePilot ? this.pilot.amp / Math.max(1e-4, this.pilotRef) : d.env / Math.max(1e-4, this.refLevel);
+        const lvl = usePilot ? this.pilot.amp / Math.max(1e-4, this.pilotRef) : cEnv / Math.max(1e-4, this.refLevel);
         g = faderCurve(lvl, this.faderLo, this.faderHi);
       }
       if (fm === 'virtual' || fm === 'both') g *= vfGain;
@@ -687,9 +776,10 @@ class FlutterProcessor extends AudioWorkletProcessor {
       const cal = this.cal;
       if (cal) {
         cal.n++;
-        if (d.active) cal.active++;
-        if ((cal.n & 31) === 0 && d.active && d.rawSpeed > 0) cal.speeds.push(d.rawSpeed);
-        if ((cal.n & 31) === 0 && d.active) { cal.stat += d.dir; cal.statN++; cal.env += d.env; cal.envN++; } // mean direction while the motor runs
+        const rs = stereo ? q.rawSpeed : d.rawSpeed, cdir = stereo ? q.dir : d.dir;
+        if (cActive) cal.active++;
+        if ((cal.n & 31) === 0 && cActive && rs > 0) cal.speeds.push(rs);
+        if ((cal.n & 31) === 0 && cActive) { cal.stat += cdir; cal.statN++; cal.env += cEnv; cal.envN++; } // mean direction while the motor runs
         if (cal.n >= cal.N) {
           const s = cal.speeds.sort((a, b) => a - b);
           const med = s.length ? s[Math.floor(s.length / 2)] : 0;
@@ -698,6 +788,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
             type: 'calibrated', speed: med, spread: med ? (hi - lo) / med : 1,
             stat: cal.statN ? cal.stat / cal.statN : 0, env: cal.envN ? cal.env / cal.envN : 0,
             activeFrac: cal.active / cal.n, pilot: this.pilot.measured(),
+            balance: q.levelR > 1e-12 ? Math.sqrt(q.levelL / q.levelR) : 1,
           });
           this.cal = null;
         }
@@ -711,7 +802,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
       this.newBins.length = 0;
       this.port.postMessage({
         type: 'state', v: e.vs, rate: e.rate, lag: e.lag, locked: e.locked, frozen: e.frozen,
-        env: d.env, active: d.active, dir: d.dir, stat: d.lastStat, pos: d.posInt,
+        env: stereo ? q.env : d.env, active: stereo ? q.active : d.active, dir: stereo ? q.dir : d.dir,
+        stat: stereo ? 0 : d.lastStat, pos: stereo ? q.posInt : d.posInt,
         gain: e.gain, ctrlPk: this.ctrlPk, livePk: this.livePk, outPk: this.outPk,
         simV: sim.v, loopLen: e.loopLen, bins, pilotAmp: this.pilot.amp,
       }, bins ? [bins.buffer] : []);
@@ -743,6 +835,8 @@ const S = {
   faderLo: store.get('faderLo', 0.08), faderHi: store.get('faderHi', 0.45), gate: store.get('gate', -56),
   flip: store.get('flip', false), calib: store.get('calib', 1), refLevel: store.get('refLevel', 0.3),
   calInfo: store.get('calInfo', null), outGain: store.get('outGain', 1), loopSec: store.get('loopSec', 4),
+  control: store.get('control', 'wow'), tcType: store.get('tcType', '1000'), carrierHz: store.get('carrierHz', 1000), balance: store.get('balance', 1),
+  faderStyle: store.get('faderStyle', 'pad'), padMode: store.get('padMode', 'cuts'),
 };
 const save = (k) => store.set(k, S[k]);
 
@@ -767,7 +861,7 @@ async function start() {
     numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [2],
     channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers',
   });
-  ctrlBus = new GainNode(ctx, { channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
+  ctrlBus = new ChannelMergerNode(ctx, { numberOfInputs: 2 });   // ch 0 = WOW tone / timecode L, ch 1 = timecode R
   liveMerger = new ChannelMergerNode(ctx, { numberOfInputs: 2 });
   master = new GainNode(ctx, { gain: 1 });
   ctrlBus.connect(node, 0, 0);
@@ -843,7 +937,7 @@ async function applyRouting() {
     if (!sim) {
       const s = await getStream(S.ctrlDev);
       const src = new MediaStreamAudioSourceNode(ctx, { mediaStream: s });
-      ctrlSrcNodes = [src, ...pick(src, S.ctrlCh, ctrlBus, [0])];
+      ctrlSrcNodes = [src, ...(S.control === 'timecode' ? pick(src, 'S', ctrlBus, [0, 1]) : pick(src, S.ctrlCh, ctrlBus, [0]))];
     }
   } catch (err) { $('routeErr').textContent = 'Control input: ' + err.message; }
   try {
@@ -918,8 +1012,10 @@ function sendAllParams() {
     type: 'params', smoothMs: S.smooth, mode: S.mode, snapDelay: S.snapDelay, lock: S.lock,
     faderMode: S.faderMode, wowRead: S.wowRead, pilotHz: S.pilotHz, pilotRef: S.pilotRef, vfX: S.vfX, vfCut: S.vfCut, vfWidth: S.vfWidth, hamster: S.hamster, faderLo: S.faderLo, faderHi: S.faderHi, gate: Math.pow(10, S.gate / 20),
     flip: S.flip, calib: S.calib, refLevel: S.refLevel, toneRef: S.calInfo ? S.refLevel : 0, outGain: S.outGain, loopSec: S.loopSec,
+    control: S.control, carrierHz: S.carrierHz, balance: S.balance, padStyle: S.faderStyle === 'pad', padOpen: padResting(),
   });
 }
+const padResting = () => S.padMode === 'cuts';   // open at rest if touching cuts
 const param = (o) => node && node.port.postMessage(Object.assign({ type: 'params' }, o));
 
 // ---------- messages ----------
@@ -944,7 +1040,11 @@ function onMsg(m) {
     const el = $('calRes');
     if (m.activeFrac < 0.9 || m.speed <= 0) { el.textContent = 'No steady control tone — check routing, balance knob, and that the tone is playing.'; el.className = 'calres bad'; return; }
     if (m.spread > 0.12) { el.textContent = `Speed unsteady (±${(m.spread * 50).toFixed(0)}%) — hands off the platter and try again.`; el.className = 'calres bad'; return; }
-    S.calib = m.speed; S.refLevel = m.env;
+    if (S.control === 'timecode') {
+      if (m.speed < 0.3 || m.speed > 4) { el.textContent = 'That does not look like 1–2 kHz timecode — check both timecode channels and that it is playing.'; el.className = 'calres bad'; return; }
+      S.carrierHz *= m.speed; S.balance = Math.min(4, Math.max(0.25, m.balance)); save('carrierHz'); save('balance');
+    } else S.calib = m.speed;
+    S.refLevel = m.env;
     if (S.wowRead === 'pilot') {
       if (m.pilot.hz < 12000 || m.pilot.hz > 23000 || m.pilot.amp < 0.003) {
         el.textContent = 'Control tone OK, but no pilot tone found above 12 kHz — is the pilot WAV playing on the beat deck and the fader open?'; el.className = 'calres bad'; return;
@@ -961,7 +1061,7 @@ function showCal() {
   const el = $('calRes'), c = S.calInfo;
   if (!c) { el.textContent = 'not calibrated — using nominal 1×'; el.className = 'calres'; return; }
   const db = 20 * Math.log10(Math.max(1e-6, c.level));
-  el.textContent = `1× = ${c.speed.toFixed(4)} of nominal · level ${db.toFixed(1)} dBFS${S.flip ? ' · flipped' : ''}${S.wowRead === 'pilot' ? ` · pilot ${(S.pilotHz / 1000).toFixed(2)} kHz` : ''}`;
+  el.textContent = (S.control === 'timecode' ? `timecode carrier ${S.carrierHz.toFixed(1)} Hz` : `1× = ${c.speed.toFixed(4)} of nominal`) + ` · level ${db.toFixed(1)} dBFS${S.flip ? ' · flipped' : ''}${S.wowRead === 'pilot' ? ` · pilot ${(S.pilotHz / 1000).toFixed(2)} kHz` : ''}`;
   el.className = 'calres good';
 }
 
@@ -1130,6 +1230,36 @@ function syncButtons() {
 
 seg('ctrlCh', 'ctrlCh', () => node && applyRouting());
 seg('liveCh', 'liveCh', () => node && applyRouting());
+function controlUI() {
+  $('tcRow').style.display = S.control === 'timecode' ? '' : 'none';
+  $('ctrlChRow').style.display = S.control === 'timecode' ? 'none' : '';
+}
+seg('control', 'control', () => {   // a different signal: the old calibration no longer applies
+  S.calInfo = null; S.flip = false; S.calib = 1; S.balance = 1; ['calInfo', 'flip', 'calib', 'balance'].forEach(save);
+  controlUI(); syncButtons(); showCal(); if (node) { sendAllParams(); applyRouting(); }
+});
+seg('tcType', 'tcType', () => { S.carrierHz = parseFloat(S.tcType); S.calInfo = null; save('carrierHz'); save('calInfo'); showCal(); param({ carrierHz: S.carrierHz }); });
+controlUI();
+// tap pad, like a PT01's cut switch
+let padDown = false;
+function padUI() {
+  const pad = S.faderStyle === 'pad', cuts = S.padMode === 'cuts', on = cuts ? !padDown : padDown;
+  $('pad').style.display = pad ? '' : 'none'; $('padMode').style.display = pad ? '' : 'none';
+  $('xf').style.display = pad ? 'none' : '';
+  $('pad').classList.toggle('off', !on); $('pad').classList.toggle('down', padDown);
+  $('padLbl').textContent = cuts ? (padDown ? 'CUT' : 'Tap to cut') : (padDown ? 'OPEN' : 'Hold to open');
+  $('padSub').textContent = on ? 'SOUND ON' : 'SOUND OFF';
+  if (pad) $('xfState').textContent = on ? 'open' : 'cut';
+  $('xfNote').innerHTML = pad ? 'Tap the pad in rhythm to chop the sound, like a PT01 cut switch. Hold <kbd>C</kbd> to cut.'
+    : 'Drag the fader, or hold <kbd>C</kbd> to cut. The green zone is where the scratch is audible; set its size, curve and hamster in <b>Fader</b>.';
+}
+function setPad(down) { padDown = down; param({ padOpen: S.padMode === 'cuts' ? !down : down }); padUI(); }
+$('pad').addEventListener('pointerdown', (e) => { $('pad').setPointerCapture(e.pointerId); setPad(true); });
+$('pad').addEventListener('pointerup', () => setPad(false));
+$('pad').addEventListener('pointercancel', () => setPad(false));
+seg('faderStyle', 'faderStyle', () => { param({ padStyle: S.faderStyle === 'pad', padOpen: padResting() }); padUI(); if (S.faderStyle === 'slider') drawXf(); });
+seg('padMode', 'padMode', () => { param({ padOpen: padResting() }); padUI(); });
+padUI();
 seg('mode', 'mode', () => param({ mode: S.mode }));
 const wowReadNote = () => { $('wowReadNote').innerHTML = S.wowRead === 'pilot'
   ? 'WOW <code>wow_settings.txt</code>: <b>fader_left = beat</b>, <b>fader_right = beat</b>. Pilot WAV in the <b>beats</b> folder, control tone in <b>samples</b>, mix knob centered. The platter stays tracked through every cut.'
@@ -1183,7 +1313,7 @@ $('calBtn').addEventListener('click', () => {
   if (!node) return;
   $('calRes').textContent = 'listening for 1.5 s… hands off'; $('calRes').className = 'calres';
   // measure against nominal: reset calibration first
-  node.port.postMessage({ type: 'params', calib: 1, flip: false, toneRef: 0 });
+  node.port.postMessage({ type: 'params', calib: 1, flip: false, toneRef: 0, carrierHz: S.carrierHz });
   S.flip = false;
   setTimeout(() => node.port.postMessage({ type: 'calibrate' }), 150);
 });
@@ -1216,7 +1346,7 @@ function wavDownload(name, sr, ch, n, sampleAt) {
   dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, ch, true); dv.setUint32(24, sr, true);
   dv.setUint32(28, sr * 2 * ch, true); dv.setUint16(32, 2 * ch, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 2 * ch, true);
   const out = new Int16Array(buf, 44);
-  for (let i = 0; i < n; i++) { const v = sampleAt(i); for (let c = 0; c < ch; c++) out[i * ch + c] = v; }
+  for (let i = 0; i < n; i++) { const v = sampleAt(i, 0); for (let c = 0; c < ch; c++) out[i * ch + c] = c && sampleAt.length > 1 ? sampleAt(i, c) : v; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
@@ -1230,6 +1360,10 @@ $('toneBtn').addEventListener('click', () => {
     const th = 2 * Math.PI * 1500 * i / sr;
     return Math.round(Math.exp(toneLogAmp(th)) * Math.sin(th) * 0.89 * 32767);
   });
+});
+$('tcBtn').addEventListener('click', () => {
+  const sr = 44100;   // 10 s = 10 000 whole 1 kHz cycles: loops seamlessly. Left = cos, right = sin.
+  wavDownload('00-liveskratch-timecode.wav', sr, 2, sr * 10, (i, c) => Math.round((c ? Math.sin : Math.cos)(2 * Math.PI * 1000 * i / sr) * 0.7 * 32767));
 });
 $('pilotBtn').addEventListener('click', () => {
   const sr = 44100; // 49 samples = exactly 20 cycles of 18 kHz → seamless loop

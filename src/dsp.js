@@ -295,3 +295,54 @@ class PilotReader {
 }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { PILOT_HZ, Biquad, PilotReader });
+
+// ---------- stereo timecode (Serato / Traktor / LiveSkratch stereo): relative-mode quadrature decoder ----------
+// Same carrier on both channels a quarter-cycle apart: the pair traces a circle whose angle is the position within
+// a carrier cycle and whose turning direction is the platter's. Only speed and direction are needed here.
+class QuadDecoder {
+  constructor(sr) {
+    this.sr = sr; this.carrierHz = 1000; this.flip = false; this.gate = 0.0015; this.balance = 1;
+    this.hpA = 0; this.hpFor = -1;
+    this.xL = 0; this.yL = 0; this.xR = 0; this.yR = 0;
+    this.env = 0; this.active = false; this.prevPhase = 0; this.havePrev = false; this.phi = 0;
+    this.RING = 8192; this.ring = new Float64Array(this.RING); this.n = 0; this.filled = 0;
+    this.v = 0; this.dir = 1; this.rawSpeed = 0; this.posInt = 0; this.levelL = 0; this.levelR = 0;
+  }
+  process(l, r) {
+    const sr = this.sr, M = this.RING - 1;
+    if (this.carrierHz !== this.hpFor) { this.hpFor = this.carrierHz; this.hpA = Math.exp(-2 * Math.PI * Math.max(5, 0.02 * this.carrierHz) / sr); }
+    const a = this.hpA * (this.yL + l - this.xL); this.xL = l; this.yL = a;
+    const b0 = this.hpA * (this.yR + r - this.xR); this.xR = r; this.yR = b0;
+    const b = b0 * this.balance;
+    this.levelL += (a * a - this.levelL) * 0.0005; this.levelR += (b0 * b0 - this.levelR) * 0.0005;
+    const mag = Math.sqrt(a * a + b * b);
+    const relT = Math.max(0.002 * sr, 3 * sr / Math.max(50, this.carrierHz));
+    this.env = Math.max(mag, this.env * Math.exp(-1 / relT));
+    this.active = this.active ? this.env > this.gate : this.env > 2 * this.gate;  // hysteresis
+    if (!this.active) {
+      this.havePrev = false; this.v = 0; this.rawSpeed = 0;
+      this.ring[this.n & M] = this.phi; this.n++; this.filled = 0;
+      return 0;
+    }
+    if (mag < 0.5 * this.gate) { this.ring[this.n & M] = this.phi; this.n++; this.posInt += this.v; return this.v; }
+    const p = Math.atan2(b, a);
+    if (this.havePrev) {
+      let d = p - this.prevPhase;
+      if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
+      this.phi += d;
+    }
+    this.prevPhase = p; this.havePrev = true;
+    this.ring[this.n & M] = this.phi;
+    const W = Math.max(4, Math.min(4096, Math.round(sr / this.carrierHz)));
+    if (++this.filled > W) {
+      let s = (this.phi - this.ring[(this.n - W) & M]) / (2 * Math.PI * W * this.carrierHz / sr);
+      if (this.flip) s = -s;
+      this.v = s; this.rawSpeed = Math.abs(s);
+      if (Math.abs(s) > 0.02) this.dir = s > 0 ? 1 : -1;
+    }
+    this.n++;
+    this.posInt += this.v;
+    return this.v;
+  }
+}
+if (typeof module !== 'undefined') module.exports.QuadDecoder = QuadDecoder;

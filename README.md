@@ -48,6 +48,13 @@ test/           test_wow.js: accuracy under true and WOW-style reverse; test_pil
 Run `python3 build.py` after editing anything in `src/`.
 
 
+## Control signals: WOW tone or stereo timecode
+
+- **WOW tone (mono).** The WOW has a mono output, so it plays the LiveSkratch tone described above.
+- **Stereo timecode.** Serato or Traktor control vinyl and CDs, or `wow/00-liveskratch-timecode.wav` (a copyright-free 1 kHz quadrature pair) played by an SC-1000 / SC-500. The two channels carry the same carrier a quarter-cycle apart, so the pair traces a circle whose angle is the position within a cycle and whose turning direction is the platter's. LiveSkratch scratches live audio rather than a track, so it needs only speed and direction: a relative-mode decoder that ignores the position bits works with any such timecode. Calibrate finds the exact carrier (1 or 2 kHz), the left/right balance and the direction. Simulated scratches track within 0.3–3.4 ms, against 15–38 ms for the mono WOW tone.
+
+The on-screen fader is a tap pad by default, like a PT01's cut switch (touch cuts, or touch opens); the slider is still available.
+
 ## iPad / iPhone (ios/)
 
 Open `ios/LiveSkratch.xcodeproj` in Xcode 16+, pick your iPad, and press Run. Two targets:
