@@ -13,9 +13,14 @@ public final class AudioUnitViewController: AUViewController, AUAudioUnitFactory
 
     nonisolated public func createAudioUnit(with componentDescription: AudioComponentDescription) throws -> AUAudioUnit {
         let au = try LiveSkratchAudioUnit(componentDescription: componentDescription, options: [])
-        let attach = { self.audioUnit = au; self.connectUI() }
-        if Thread.isMainThread { attach() } else { DispatchQueue.main.async(execute: attach) }
+        nonisolated(unsafe) let unit = au
+        Task { @MainActor in self.attach(unit) }
         return au
+    }
+
+    private func attach(_ au: LiveSkratchAudioUnit) {
+        audioUnit = au
+        connectUI()
     }
 
     private func connectUI() {
