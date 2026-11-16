@@ -10,6 +10,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
     this.pilotGain = (f) => this.pilot.lnGain(f);
     this.eng = new ScratchEngine(sr);
     this.faderMode = 'wow';
+    this.userGate = 0.0015; this.toneRef = 0;   // gate = max(user gate, 10% of calibrated tone level)
     this.refLevel = 0.3;
     this.faderLo = 0.08; this.faderHi = 0.45;
     this.softCut = 1;
@@ -38,7 +39,9 @@ class FlutterProcessor extends AudioWorkletProcessor {
         if ('hamster' in m) this.vf.hamster = m.hamster;
         if ('faderLo' in m) this.faderLo = m.faderLo;
         if ('faderHi' in m) this.faderHi = m.faderHi;
-        if ('gate' in m) d.gate = m.gate;
+        if ('gate' in m) this.userGate = m.gate;
+        if ('toneRef' in m) this.toneRef = m.toneRef;
+        if ('gate' in m || 'toneRef' in m) d.gate = Math.max(this.userGate, 0.1 * this.toneRef);
         if ('flip' in m) d.flip = m.flip;
         if ('calib' in m) d.calib = m.calib;
         if ('refLevel' in m) this.refLevel = m.refLevel;

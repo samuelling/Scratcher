@@ -442,7 +442,7 @@ function sendAllParams() {
   node.port.postMessage({
     type: 'params', smoothMs: S.smooth, mode: S.mode, snapDelay: S.snapDelay, lock: S.lock,
     faderMode: S.faderMode, wowRead: S.wowRead, pilotHz: S.pilotHz, pilotRef: S.pilotRef, vfX: S.vfX, vfCut: S.vfCut, vfWidth: S.vfWidth, hamster: S.hamster, faderLo: S.faderLo, faderHi: S.faderHi, gate: Math.pow(10, S.gate / 20),
-    flip: S.flip, calib: S.calib, refLevel: S.refLevel, outGain: S.outGain, loopSec: S.loopSec,
+    flip: S.flip, calib: S.calib, refLevel: S.refLevel, toneRef: S.calInfo ? S.refLevel : 0, outGain: S.outGain, loopSec: S.loopSec,
   });
 }
 const param = (o) => node && node.port.postMessage(Object.assign({ type: 'params' }, o));
@@ -708,7 +708,7 @@ $('calBtn').addEventListener('click', () => {
   if (!node) return;
   $('calRes').textContent = 'listening for 1.5 s… hands off'; $('calRes').className = 'calres';
   // measure against nominal: reset calibration first
-  node.port.postMessage({ type: 'params', calib: 1, flip: false });
+  node.port.postMessage({ type: 'params', calib: 1, flip: false, toneRef: 0 });
   S.flip = false;
   setTimeout(() => node.port.postMessage({ type: 'calibrate' }), 150);
 });
