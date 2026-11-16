@@ -172,6 +172,9 @@
   <aside class="side">
     <div class="card">
       <h2>Routing</h2>
+      <div class="row" id="outRow"><label>Output to</label><select id="outDev" class="grow"></select></div>
+      <div class="row"><label>channels</label><select id="outCh"></select><span class="note" style="margin:0" id="outChNote"></span></div>
+      <p class="note" style="margin-top:0">If your interface's direct monitoring blends the WOW tone into outputs 1–2, send Scratcher to another pair (e.g. 3–4) or another device.</p>
       <div class="row"><label>Control (WOW)</label><select id="ctrlDev" class="grow"></select></div>
       <div class="row"><label>channel</label>
         <div class="seg" id="ctrlCh"><button data-v="L">L</button><button data-v="R">R</button><button data-v="M">L+R</button></div>
@@ -181,7 +184,6 @@
       <div class="row"><label>channel</label>
         <div class="seg" id="liveCh"><button data-v="S">Stereo</button><button data-v="L">L</button><button data-v="R">R</button><button data-v="M">L+R</button></div>
       </div>
-      <div class="row" id="outRow"><label>Output</label><select id="outDev" class="grow"></select></div>
       <div class="meters">
         <span>WOW in</span><div class="bar"><i id="mCtrl"></i></div>
         <span>live in</span><div class="bar"><i id="mLive"></i></div>
@@ -257,7 +259,7 @@ const store = {
 const S = {
   ctrlDev: store.get('ctrlDev', 'sim'), ctrlCh: store.get('ctrlCh', 'L'),
   liveDev: store.get('liveDev', 'test'), liveCh: store.get('liveCh', 'S'),
-  outDev: store.get('outDev', ''),
+  outDev: store.get('outDev', ''), outPair: store.get('outPair', 0),
   smooth: store.get('smooth', 2), mode: store.get('mode', 'snap'), snapDelay: store.get('snapDelay', 180),
   lock: store.get('lock', true), faderMode: store.get('faderMode2', 'both'), wowRead: store.get('wowRead', 'level'), pilotHz: store.get('pilotHz', 18000), pilotRef: store.get('pilotRef', 0.3), vfCut: store.get('vfCut', 0.05), vfWidth: store.get('vfWidth', 0.02), hamster: store.get('hamster', false), vfX: 0,
   faderLo: store.get('faderLo', 0.08), faderHi: store.get('faderHi', 0.45), gate: store.get('gate', -56),
@@ -266,7 +268,7 @@ const S = {
 };
 const save = (k) => store.set(k, S[k]);
 
-let ctx, node, ctrlBus, liveMerger, master;
+let ctx, node, ctrlBus, liveMerger, master, outNodes = [];
 const streams = new Map();      // deviceId -> MediaStream
 let ctrlSrcNodes = [], liveSrcNodes = [];
 let testBuffer = null, fileBuffer = null;
@@ -292,7 +294,8 @@ async function start() {
   master = new GainNode(ctx, { gain: 1 });
   ctrlBus.connect(node, 0, 0);
   liveMerger.connect(node, 0, 1);
-  node.connect(master).connect(ctx.destination);
+  node.connect(master);
+  rebuildOut();
   node.port.onmessage = (e) => onMsg(e.data);
   sendAllParams();
 
@@ -400,6 +403,31 @@ async function refreshDevices() {
 
 async function setOutput(id) {
   try { await ctx.setSinkId(id); showLatency(); } catch (err) { $('routeErr').textContent = 'Output: ' + err.message; }
+  rebuildOut();
+}
+
+// master (stereo) → chosen channel pair of the output device
+function rebuildOut() {
+  for (const n of outNodes) { try { n.disconnect(); } catch (e) {} }
+  try { master.disconnect(); } catch (e) {}
+  const max = Math.max(2, ctx.destination.maxChannelCount || 2);
+  const pairs = Math.max(1, Math.floor(max / 2));
+  if (S.outPair >= pairs) S.outPair = 0;
+  const sel = $('outCh'); sel.innerHTML = '';
+  for (let p = 0; p < pairs; p++) { const o = document.createElement('option'); o.value = p; o.textContent = `${2 * p + 1}–${2 * p + 2}`; sel.appendChild(o); }
+  sel.value = S.outPair;
+  $('outChNote').textContent = `${max} channels available`;
+  try {
+    ctx.destination.channelCount = max;
+    ctx.destination.channelCountMode = 'explicit';
+    ctx.destination.channelInterpretation = 'discrete';
+  } catch (e) {}
+  const sp = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
+  const mg = new ChannelMergerNode(ctx, { numberOfInputs: max });
+  master.connect(sp);
+  sp.connect(mg, 0, 2 * S.outPair); sp.connect(mg, 1, 2 * S.outPair + 1);
+  mg.connect(ctx.destination);
+  outNodes = [sp, mg];
 }
 
 function showLatency() {
@@ -650,6 +678,7 @@ slider('loopSec', 'loopSec', v => v.toFixed(1) + ' s', v => param({ loopSec: v }
 $('ctrlDev').addEventListener('change', (e) => { S.ctrlDev = e.target.value; save('ctrlDev'); applyRouting(); });
 $('liveDev').addEventListener('change', (e) => { S.liveDev = e.target.value; save('liveDev'); applyRouting(); });
 $('outDev').addEventListener('change', (e) => { S.outDev = e.target.value; save('outDev'); setOutput(S.outDev); });
+$('outCh').addEventListener('change', (e) => { S.outPair = parseInt(e.target.value, 10); save('outPair'); rebuildOut(); });
 $('liveFile').addEventListener('change', async (e) => {
   const f = e.target.files[0]; if (!f) return;
   try { fileBuffer = await ctx.decodeAudioData(await f.arrayBuffer()); applyRouting(); }
