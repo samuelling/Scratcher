@@ -45,21 +45,17 @@ struct PluginRootView: View {
     init(model: ScratcherModel) { _model = StateObject(wrappedValue: model) }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                PerformView(model: model)
-                Card(title: "Inputs") {
-                    Picker("WOW control tone on", selection: model.binding(\.ctrlChannel)) {
-                        Text("Left input").tag(0); Text("Right input").tag(1)
-                    }.pickerStyle(.segmented)
-                    Text("In AUM: make a stereo channel from two interface inputs (one the WOW, one the live audio) and insert LiveSkratch. The other side is the audio you scratch.")
-                        .font(.caption).foregroundStyle(.secondary)
+        ScratcherTabs(model: model) {
+            Section {
+                Picker("WOW tone on", selection: model.binding(\.ctrlChannel)) {
+                    Text("Left input").tag(0); Text("Right input").tag(1)
                 }
-                SettingsSections(model: model)
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Inputs")
+            } footer: {
+                Text("In AUM, make a stereo channel from two interface inputs, one the WOW and one the live audio, and insert LiveSkratch. The other side is what you scratch.")
             }
-            .padding()
         }
-        .background(Color(white: 0.07))
-        .preferredColorScheme(.dark)
     }
 }

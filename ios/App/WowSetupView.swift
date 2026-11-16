@@ -87,58 +87,53 @@ final class WowSetup: ObservableObject {
     }
 }
 
-struct WowSetupCard: View {
+struct WowSetupSection: View {
     @StateObject private var wow = WowSetup()
     @State private var picking = false
 
     var body: some View {
-        Card(title: "WOW setup") {
+        Section {
             if wow.driveName == nil {
-                Text("Plug the WOW into the iPad with USB-C so it shows up in Files, then choose its drive. You only do this once.")
-                    .font(.callout)
-                Button("Choose the WOW drive…") { picking = true }.buttonStyle(.borderedProminent).tint(accent)
+                Button { picking = true } label: { Label("Choose the WOW drive…", systemImage: "externaldrive.badge.plus") }
             } else {
-                HStack {
-                    Image(systemName: "externaldrive.fill")
-                    Text(wow.driveName ?? "").font(.headline)
-                    Spacer()
-                    Button("Check again") { wow.refresh() }
-                    Button("Change…") { picking = true }
+                LabeledContent {
+                    Text(wow.driveName ?? "").lineLimit(1).truncationMode(.middle)
+                } label: {
+                    Label("WOW", systemImage: "externaldrive.fill")
                 }
                 if let mode = wow.mode {
                     let on = mode != .normal
                     Picker("Mode", selection: Binding(get: { on }, set: { wow.setLiveSkratch($0) })) {
                         Text("Normal").tag(false); Text("LiveSkratch").tag(true)
                     }
-                    .pickerStyle(.segmented).disabled(wow.busy)
-                    Text(on ? "Sample = the control tone, beat = the fader pilot, fader cuts the beat, effects off."
-                            : "Your own beats, samples and settings.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if !on { Toggle("Park my beats and samples while in LiveSkratch mode (recommended)", isOn: $wow.park) }
-                    if !wow.values.isEmpty {
-                        Text(wow.values.sorted { $0.key < $1.key }.map { "\($0.key) = \($0.value)" }.joined(separator: "   "))
-                            .font(.caption.monospaced()).foregroundStyle(.secondary)
-                    }
+                    .pickerStyle(.segmented)
+                    .disabled(wow.busy)
+                    if !on { Toggle("Put my beats & samples aside", isOn: $wow.park) }
+                }
+                HStack {
+                    Button("Check again") { wow.refresh() }.buttonStyle(.borderless)
+                    Spacer()
+                    Button("Change drive…") { picking = true }.buttonStyle(.borderless)
                 }
             }
             if wow.busy { ProgressView() }
             if let m = wow.message {
-                Text(m).font(.callout).foregroundStyle(wow.ok ? .green : .orange)
+                Text(m).font(.footnote).foregroundStyle(wow.ok ? .green : .orange)
             }
-            DisclosureGroup("Set it up by hand instead") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Put the control tone in the WOW's samples folder and the pilot in beats, then set fader_left and fader_right to beat and delay/reverb strength to 0 in wow_settings.txt.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        if let u = Bundle.main.url(forResource: "00-liveskratch-control", withExtension: "wav") {
-                            ShareLink(item: u) { Label("Control tone", systemImage: "waveform") }
-                        }
-                        if let u = Bundle.main.url(forResource: "00-liveskratch-pilot", withExtension: "wav") {
-                            ShareLink(item: u) { Label("Pilot beat", systemImage: "waveform") }
-                        }
-                    }
-                }
+            if let u = Bundle.main.url(forResource: "00-liveskratch-control", withExtension: "wav") {
+                ShareLink(item: u) { Label("Share the control tone", systemImage: "waveform") }
             }
+            if let u = Bundle.main.url(forResource: "00-liveskratch-pilot", withExtension: "wav") {
+                ShareLink(item: u) { Label("Share the pilot beat", systemImage: "waveform") }
+            }
+        } header: {
+            Text("WOW setup")
+        } footer: {
+            Text(wow.driveName == nil
+                 ? "Plug the WOW in with USB-C so it shows up in Files, then choose its drive. You only do this once."
+                 : wow.mode == .normal
+                    ? "Normal: your own beats, samples and settings. Switching puts them aside in a LiveSkratch folder on the WOW and puts them back when you switch back. Eject the WOW in Files and restart it after switching."
+                    : "LiveSkratch: control tone as the sample, pilot as the beat, fader cuts the beat, effects off. Eject the WOW in Files and restart it after switching.")
         }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { r in
             if case .success(let url) = r { wow.choose(url) }
