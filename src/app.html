@@ -35,8 +35,33 @@
   button.primary:hover { color: #000; filter: brightness(1.1); }
   button.on { background: var(--ink); border-color: var(--ink); color: #000; }
   select { max-width: 100%; }
-  main { display: grid; grid-template-columns: minmax(340px, 1fr) 370px; gap: 18px; padding: 18px 22px 44px; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  main { padding: 18px 22px 44px; }
+  .tab { display: none; gap: 18px; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); align-items: start; }
+  .tab.on { display: grid; }
+  #tab-scratch.on { grid-template-columns: minmax(340px, 1.2fr) minmax(320px, 1fr); }
+  @media (max-width: 900px) { .tab.on, #tab-scratch.on { grid-template-columns: 1fr; } }
+  .col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  header .tabs { margin-left: 10px; }
+  header .tabs button { padding: 6px 16px; font-size: 14px; }
+  .qbtn { width: 32px; height: 32px; padding: 0; border-radius: 50%; font-size: 16px; border-color: var(--B); color: var(--B); }
+  .modal { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,0.94); display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 48px 16px; }
+  .modal[hidden] { display: none; }
+  .sheet { width: 100%; max-width: 640px; border: 1.5px solid var(--line); border-radius: 12px; padding: 20px 22px; background: #000; }
+  .sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .sheet h3 { margin: 0; font: 600 20px/1.1 var(--wide); letter-spacing: 0.1em; text-transform: uppercase; }
+  .sheet h4 { margin: 18px 0 8px; font: 600 12px/1 var(--wide); letter-spacing: 0.16em; color: var(--dim); text-transform: uppercase; }
+  .hitem { display: grid; grid-template-columns: 26px 1fr; gap: 10px; margin: 10px 0; }
+  .hitem .ic { color: var(--G); font: 600 16px/1.2 var(--mono); text-align: center; }
+  .hitem b { display: block; font-weight: 600; }
+  .hitem p { margin: 2px 0 0; color: var(--dim); font-size: 14px; }
+  .walk .big { font: 600 44px/1 var(--wide); color: var(--G); margin: 8px 0 10px; }
+  .walk h3 { margin-bottom: 14px; }
+  .walk ul { list-style: none; padding: 0; margin: 0; }
+  .walk li { position: relative; padding-left: 18px; margin: 0 0 11px; font-size: 16px; }
+  .walk li::before { content: ''; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--G); }
+  .dots { display: inline-flex; gap: 6px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--dim); }
+  .dots i.on { background: var(--G); border-color: var(--G); }
   .card { position: relative; background: transparent; border: 1.5px solid var(--line); border-radius: 10px; padding: 16px; }
   .card h2 { margin: 0 0 12px; font: 600 13px/1 var(--wide); letter-spacing: 0.16em; color: var(--dim); text-transform: uppercase; }
   .card h2::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 8px; border: 1.5px solid var(--B); border-radius: 50%; vertical-align: -1px; }
@@ -74,7 +99,6 @@
   .seg button.on { background: var(--ink); color: #000; }
   .note { color: var(--dim); font-size: 14px; margin: 6px 0 0; }
   .note b { color: var(--ink); font-weight: 600; }
-  .side { display: flex; flex-direction: column; gap: 18px; }
   .meters { display: grid; grid-template-columns: 70px 1fr; gap: 7px 8px; align-items: center; font: 600 11px var(--wide); letter-spacing: 0.12em; color: var(--dim); text-transform: uppercase; }
   .bar { height: 10px; border: 1.5px solid var(--line); border-radius: 3px; overflow: hidden; padding: 1.5px; }
   .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--G) 0%, var(--G) 72%, var(--A) 86%, var(--R) 100%) 0 0 / 100% 100%;
@@ -114,177 +138,218 @@
 <div id="gate-overlay">
   <div class="box">
     <h2>LIVESKRATCH<span style="color:var(--hot)">.</span></h2>
-    <p>Scratch live audio with the Headache Sound WOW. Chrome on Mac, ideally through an audio interface. Use headphones if your live source is a microphone.</p>
+    <p>Scratch live audio with the Headache Sound WOW, Serato or Traktor timecode, or an SC-1000 / SC-500, ideally through an audio interface. Use headphones if your live source is a microphone.</p>
+    <p class="note" style="text-align:center">Works best in <b>Chrome</b> or <b>Firefox</b>: other browsers may pass only 2 channels of audio in and out, so you can’t pick an interface’s other inputs and outputs.</p>
     <button class="primary" id="startBtn">Start audio</button>
     <p class="err" id="startErr"></p>
+    <p><button id="gateWalk">How it works</button></p>
+  </div>
+</div>
+
+<div class="modal" id="walk" hidden>
+  <div class="sheet walk">
+    <div class="sheet-top"><span class="dots" id="walkDots"></span><button id="walkSkip">Skip</button></div>
+    <div id="walkBody"></div>
+    <div class="row" style="justify-content:space-between;margin-top:18px">
+      <button id="walkBack">Back</button>
+      <button class="primary" id="walkNext">Next</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="help" hidden>
+  <div class="sheet">
+    <div class="sheet-top"><h3 id="helpTitle">Help</h3><button id="helpDone">Done</button></div>
+    <div id="helpBody"></div>
+    <div class="row" style="margin-top:16px"><button id="helpWalk">Show the first-time walkthrough</button></div>
   </div>
 </div>
 
 <header>
   <h1>LIVESKRATCH<span>.</span></h1>
   <span class="badge">LS-1</span>
-  <div class="sub">live-input dvs · scratch whatever is coming in</div>
+  <nav class="seg tabs" id="tab"><button data-v="scratch">Scratch</button><button data-v="setup">Setup</button><button data-v="feel">Feel</button></nav>
   <div class="spacer"></div>
   <div class="sub" id="latency"></div>
+  <button class="qbtn" id="helpBtn" title="Help (?)" aria-label="Help">?</button>
 </header>
 
 <main>
-  <section class="stage">
-    <div class="card">
-      <div class="deck">
-        <canvas id="platter" width="600" height="600"></canvas>
-        <div class="readouts">
-          <div class="ro"><div class="k">SPEED</div><div class="v" id="roSpeed">0.00<small>×</small></div></div>
-          <div class="ro"><div class="k" id="lagKey">BEHIND LIVE</div><div class="v" id="roLag">0<small>ms</small></div></div>
-          <div class="ro"><div class="k">DIRECTION</div><div class="v" id="roDir">→</div></div>
-          <div class="ro"><div class="k">FADER</div><div class="v" id="roFader">0<small>%</small></div></div>
-          <div class="chips">
-            <span class="chip sig" id="chSig">SIGNAL</span>
-            <span class="chip lock" id="chLock">1× LOCK</span>
-            <span class="chip live" id="chLive">LIVE</span>
-            <span class="chip frz" id="chFrz">FROZEN</span>
+  <!-- ================= SCRATCH ================= -->
+  <section class="tab" id="tab-scratch">
+    <div class="col">
+      <div class="card">
+        <div class="deck">
+          <canvas id="platter" width="600" height="600"></canvas>
+          <div class="readouts">
+            <div class="ro"><div class="k">SPEED</div><div class="v" id="roSpeed">0.00<small>×</small></div></div>
+            <div class="ro"><div class="k" id="lagKey">BEHIND LIVE</div><div class="v" id="roLag">0<small>ms</small></div></div>
+            <div class="ro"><div class="k">DIRECTION</div><div class="v" id="roDir">→</div></div>
+            <div class="ro"><div class="k">FADER</div><div class="v" id="roFader">0<small>%</small></div></div>
+            <div class="chips">
+              <span class="chip sig" id="chSig">SIGNAL</span>
+              <span class="chip lock" id="chLock">1× LOCK</span>
+              <span class="chip live" id="chLive">LIVE</span>
+              <span class="chip frz" id="chFrz">FROZEN</span>
+            </div>
+            <canvas class="meter" id="speedMeter" width="600" height="52" style="grid-column:1/-1"></canvas>
           </div>
-          <canvas class="meter" id="speedMeter" width="600" height="52" style="grid-column:1/-1"></canvas>
+        </div>
+        <div class="meters" style="margin-top:14px">
+          <span id="mCtrlLbl">WOW in</span><div class="bar"><i class="mCtrl"></i></div>
+          <span>live in</span><div class="bar"><i class="mLive"></i></div>
+          <span>out</span><div class="bar"><i class="mOut"></i></div>
+        </div>
+      </div>
+      <div class="card" id="simCard">
+        <h2>Virtual platter</h2>
+        <p class="note" style="margin-top:0">Control is set to <b>Virtual platter</b>: drag the record with the mouse. The app plays the same control signal a WOW or timecode deck would and runs it through the real decoder.</p>
+        <div class="row">
+          <button id="simMotor" class="on">Motor on</button>
+          <label style="min-width:auto">WOW fader</label>
+          <input type="range" id="simFader" class="grow" min="0" max="1" step="0.01" value="1">
         </div>
       </div>
     </div>
-
-    <div class="card">
-      <h2>Fader · <span id="xfState">open</span></h2>
-      <div class="row">
-        <div class="seg" id="faderStyle"><button data-v="pad">Tap pad</button><button data-v="slider">Slider</button></div>
-        <div class="seg" id="padMode"><button data-v="cuts">Touch cuts</button><button data-v="opens">Touch opens</button></div>
+    <div class="col">
+      <div class="card">
+        <h2>Fader · <span id="xfState">open</span></h2>
+        <div class="pad" id="pad"><b id="padLbl">Tap to cut</b><span id="padSub">sound on</span></div>
+        <div class="xf" id="xf">
+          <div class="slot"><div class="zone" id="xfZone"></div></div>
+          <span class="lbl" style="left:0" id="xfLblA">SCRATCH ◂</span>
+          <span class="lbl" style="right:0" id="xfLblB">▸ CUT</span>
+          <div class="knob" id="xfKnob"></div>
+        </div>
+        <p class="note" id="xfNote"></p>
       </div>
-      <div class="pad" id="pad"><b id="padLbl">Tap to cut</b><span id="padSub">sound on</span></div>
-      <div class="xf" id="xf">
-        <div class="slot"><div class="zone" id="xfZone"></div></div>
-        <span class="lbl" style="left:0" id="xfLblA">SCRATCH ◂</span>
-        <span class="lbl" style="right:0" id="xfLblB">▸ CUT</span>
-        <div class="knob" id="xfKnob"></div>
+      <div class="card">
+        <h2>Tape · last 10 s of live input</h2>
+        <canvas class="strip" id="strip" width="1600" height="180"></canvas>
+        <div class="row" style="margin-bottom:0">
+          <button id="jumpBtn" title="Space">Live <kbd>Space</kbd></button>
+          <button id="freezeBtn" title="F">Freeze <kbd>F</kbd></button>
+          <span class="note" style="margin:0">Hold <kbd>C</kbd> to cut</span>
+        </div>
       </div>
-      <p class="note" id="xfNote"></p>
-    </div>
-
-    <div class="card">
-      <h2>Tape — last 10 s of live input · <span style="color:var(--hot)">needle</span></h2>
-      <canvas class="strip" id="strip" width="1600" height="180"></canvas>
-      <div class="row" style="margin-bottom:0">
-        <button id="jumpBtn" title="Space">Jump to live <kbd>Space</kbd></button>
-        <button id="freezeBtn" title="F">Freeze <kbd>F</kbd></button>
-        <label style="min-width:auto">loop</label>
-        <input type="range" id="loopSec" min="0.5" max="16" step="0.5" value="4" style="width:120px">
-        <output id="loopSecOut">4.0 s</output>
-        <span class="note" style="margin:0">Hold <kbd>C</kbd> to cut</span>
-      </div>
-    </div>
-
-    <div class="card" id="simCard">
-      <h2>Virtual platter (test mode)</h2>
-      <p class="note" style="margin-top:0">Control source is set to <b>Virtual platter</b>: drag the record above with the mouse. The app synthesizes the same control tone the WOW plays and runs it through the real decoder.</p>
-      <div class="row">
-        <button id="simMotor" class="on">Motor on</button>
-        <label style="min-width:auto">WOW fader</label>
-        <input type="range" id="simFader" class="grow" min="0" max="1" step="0.01" value="1">
-      </div>
-    </div>
-
-    <div class="card">
-      <details>
-        <summary>WOW setup</summary>
-        <ol>
-          <li>Download the <b>control tone</b> (right panel) and load it onto the WOW as a <b>sample</b>, the same way you load any scratch sample.</li>
-          <li><b>Pilot-fader mode (recommended):</b> put the pilot WAV in the WOW's <b>beats</b> folder, set <code>fader_left = beat</code> and <code>fader_right = beat</code> in wow_settings.txt, center the mix knob, keep delay/reverb off. <b>Tone-level mode:</b> balance fully to sample instead.</li>
-          <li>WOW output → an input on your interface. Live audio (synth, mic, OP-1, anything) → another input. Pick both above.</li>
-          <li>Motor on, hands off, fader open → press <b>Calibrate</b>. It measures 1× speed and the WOW's output level, so the WOW crossfader becomes LiveSkratch's fader.</li>
-          <li>Scratch. Hands off and the needle rides at live. Pull back and you're scratching the last few seconds; let go and it snaps back to live, unless Return is set to <b>Stay</b>.</li>
-          <li>Hit <b>Freeze</b> to capture a phrase and scratch it like a record. The tape stops recording and loops the last N seconds.</li>
-        </ol>
-      </details>
     </div>
   </section>
 
-  <aside class="side">
-    <div class="card">
-      <h2>Routing</h2>
-      <div class="row" id="outRow"><label>Output to</label><select id="outDev" class="grow"></select></div>
-      <div class="row"><label>channels</label><select id="outCh"></select><span class="note" style="margin:0" id="outChNote"></span></div>
-      <p class="note" style="margin-top:0">If your interface's direct monitoring blends the WOW tone into outputs 1–2, send LiveSkratch to another pair (e.g. 3–4) or another device.</p>
-      <div class="row"><label>Control</label><select id="ctrlDev" class="grow"></select></div>
-      <div class="row"><label>signal</label>
-        <div class="seg" id="control"><button data-v="wow">WOW tone</button><button data-v="timecode">Stereo timecode</button></div>
+  <!-- ================= SETUP ================= -->
+  <section class="tab" id="tab-setup">
+    <div class="col">
+      <div class="card">
+        <h2>Control signal</h2>
+        <div class="row"><label>From</label><select id="ctrlDev" class="grow"></select></div>
+        <div class="row"><label>Signal</label>
+          <div class="seg" id="control"><button data-v="wow">WOW tone</button><button data-v="timecode">Stereo timecode</button></div>
+        </div>
+        <div class="row" id="tcRow"><label>Timecode</label>
+          <div class="seg" id="tcType"><button data-v="1000">Serato · LiveSkratch</button><button data-v="2000">Traktor</button></div>
+        </div>
+        <div class="row ctrlChRow"><label id="ctrlALbl">WOW on</label><select id="ctrlA"></select>
+          <span id="ctrlBWrap"><label style="min-width:auto;margin:0 6px 0 10px">R on</label><select id="ctrlB"></select></span></div>
+        <p class="note" id="ctrlNote" style="margin-top:0"></p>
       </div>
-      <div class="row" id="tcRow"><label>timecode</label>
-        <div class="seg" id="tcType"><button data-v="1000">Serato · LiveSkratch</button><button data-v="2000">Traktor</button></div>
+      <div class="card">
+        <h2>What you scratch</h2>
+        <div class="row"><label>From</label><select id="liveDev" class="grow"></select></div>
+        <div class="row" id="liveFileRow" style="display:none"><label>File</label><input type="file" id="liveFile" accept="audio/*" class="grow"></div>
+        <div class="row" id="liveChRow"><label>Live L</label><select id="liveL"></select><label style="min-width:auto;margin:0 6px 0 10px">R</label><select id="liveR"></select></div>
+        <p class="note" id="liveNote" style="margin-top:0"></p>
       </div>
-      <div class="row" id="ctrlChRow"><label>channel</label>
-        <div class="seg" id="ctrlCh"><button data-v="L">L</button><button data-v="R">R</button><button data-v="M">L+R</button></div>
+      <div class="card">
+        <h2>Output</h2>
+        <div class="row" id="outRow"><label>Device</label><select id="outDev" class="grow"></select></div>
+        <div class="row"><label>Channels</label><select id="outCh"></select><span class="note" style="margin:0" id="outChNote"></span></div>
+        <p class="note" style="margin-top:0">If your interface's direct monitoring blends the raw tone into outputs 1–2, send LiveSkratch to another pair or turn direct monitoring off.</p>
+        <div class="row"><label>Volume</label><input type="range" id="outGain" class="grow" min="0" max="1.5" step="0.01" value="1"><output id="outGainOut">100%</output></div>
+        <div class="meters">
+          <span>WOW in</span><div class="bar"><i class="mCtrl"></i></div>
+          <span>live in</span><div class="bar"><i class="mLive"></i></div>
+          <span>out</span><div class="bar"><i class="mOut"></i></div>
+        </div>
+        <p class="err" id="routeErr"></p>
       </div>
-      <div class="row"><label>Live input</label><select id="liveDev" class="grow"></select></div>
-      <div class="row" id="liveFileRow" style="display:none"><label>file</label><input type="file" id="liveFile" accept="audio/*" class="grow"></div>
-      <div class="row"><label>channel</label>
-        <div class="seg" id="liveCh"><button data-v="S">Stereo</button><button data-v="L">L</button><button data-v="R">R</button><button data-v="M">L+R</button></div>
-      </div>
-      <div class="meters">
-        <span>WOW in</span><div class="bar"><i id="mCtrl"></i></div>
-        <span>live in</span><div class="bar"><i id="mLive"></i></div>
-        <span>out</span><div class="bar"><i id="mOut"></i></div>
-      </div>
-      <div class="row"><label>Volume</label><input type="range" id="outGain" class="grow" min="0" max="1.5" step="0.01" value="1"><output id="outGainOut">100%</output></div>
-      <p class="err" id="routeErr"></p>
     </div>
+    <div class="col">
+      <div class="card" id="wowCard">
+        <h2>WOW setup</h2>
+        <div id="wowNoFs" class="note" style="margin-top:0" hidden>Switching the WOW from the browser needs Chrome or Edge. In other browsers, use <code>wow/scratcher-mode.command</code> on a Mac.</div>
+        <div id="wowFs">
+          <div class="row"><button id="wowPick">Choose the WOW drive</button><span class="calres" id="wowName">not chosen</span></div>
+          <div class="row"><label>Mode</label>
+            <div class="seg" id="wowMode"><button data-v="normal">Normal</button><button data-v="liveskratch">LiveSkratch</button></div>
+          </div>
+          <div class="row"><label>Park my files</label><button id="wowPark" class="on">on</button></div>
+          <div class="calres" id="wowState"></div>
+          <p class="note"><b>LiveSkratch</b> sets your own beats and samples aside on the WOW (in its <code>LiveSkratch/</code> folder), loads the control tone and pilot beat, and sets the fader to cut the pilot beat. <b>Normal</b> puts everything back as it was, with the fader cutting the samples only so the beat always plays. Afterwards, eject the WOW and restart it: it only reads its files at start-up.</p>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Calibrate</h2>
+        <div class="row"><button id="calBtn" class="primary">Calibrate (motor on, hands off)</button></div>
+        <div class="calres" id="calRes">not calibrated — using nominal 1×</div>
+        <div class="row"><label>Flip direction</label><button id="flipBtn">off</button></div>
+        <div class="row"><button id="recBtn">Record 10 s diagnostic</button><span class="calres" id="recRes"></span></div>
+        <p class="note">Saves 10 s of the raw control input, live input, output and fader as a WAV for debugging. Scratch, cut and let it ride while it records.</p>
+      </div>
+      <div class="card">
+        <h2>Tone files</h2>
+        <p class="note" style="margin-top:0">The WOW setup above installs these for you. To load them by hand: the control tone goes in the WOW's <b>samples</b> folder, the pilot in <b>beats</b>. The stereo timecode is for an SC-1000 / SC-500.</p>
+        <div class="row">
+          <select id="toneLen"><option value="10" selected>10 s</option><option value="29">29 s</option></select>
+          <button id="toneBtn">Control tone</button>
+          <button id="pilotBtn">Pilot</button>
+          <button id="tcBtn">Stereo timecode</button>
+        </div>
+      </div>
+    </div>
+  </section>
 
-    <div class="card">
-      <h2>Calibrate</h2>
-      <div class="row"><button id="calBtn" class="primary">Calibrate (motor on, hands off)</button></div>
-      <div class="calres" id="calRes">not calibrated — using nominal 1×</div>
-      <div class="row"><label>Flip direction</label><button id="flipBtn">off</button></div>
-      <div class="row"><button id="recBtn">Record 10 s diagnostic</button><span class="calres" id="recRes"></span></div>
-      <p class="note">Captures the raw WOW input, live input, output and fader as a WAV you can send for debugging. Scratch, cut and let it ride while it records.</p>
-    </div>
-
-    <div class="card">
-      <h2>Feel</h2>
-      <div class="row"><label>Smoothing</label><input type="range" id="smooth" class="grow" min="0.3" max="12" step="0.1" value="2"><output id="smoothOut">2.0 ms</output></div>
-      <p class="note">Lower is tighter and grittier; higher is silkier but laggier.</p>
-      <div class="row"><label>Return</label>
-        <div class="seg" id="mode"><button data-v="snap">Snap to live</button><button data-v="stay">Stay behind</button></div>
+  <!-- ================= FEEL ================= -->
+  <section class="tab" id="tab-feel">
+    <div class="col">
+      <div class="card">
+        <h2>Feel</h2>
+        <div class="row"><label>Smoothing</label><input type="range" id="smooth" class="grow" min="0.3" max="12" step="0.1" value="2"><output id="smoothOut">2.0 ms</output></div>
+        <p class="note">Lower is tighter and grittier; higher is silkier but laggier.</p>
+        <div class="row"><label>After a scratch</label>
+          <div class="seg" id="mode"><button data-v="snap">Snap to live</button><button data-v="stay">Stay behind</button></div>
+        </div>
+        <div class="row"><label>Snap after</label><input type="range" id="snapDelay" class="grow" min="40" max="1500" step="10" value="180"><output id="snapDelayOut">180 ms</output></div>
+        <div class="row"><label>1× lock</label><button id="lockBtn" class="on">on</button></div>
+        <p class="note">Lock treats ±3% of normal speed as exactly 1×, so the motor's wobble doesn't drift the needle off live.</p>
+        <div class="row"><label>Freeze loop</label><input type="range" id="loopSec" class="grow" min="0.5" max="16" step="0.5" value="4"><output id="loopSecOut">4.0 s</output></div>
       </div>
-      <div class="row"><label>Snap after</label><input type="range" id="snapDelay" class="grow" min="40" max="1500" step="10" value="180"><output id="snapDelayOut">180 ms</output></div>
-      <div class="row"><label>1× lock</label><button id="lockBtn" class="on">on</button></div>
-      <p class="note">Lock treats ±3% of normal speed as exactly 1×, so the motor's wobble doesn't drift the needle off live.</p>
-    </div>
-
-    <div class="card">
-      <h2>Fader</h2>
-      <div class="row"><label>Source</label>
-        <div class="seg" id="faderMode"><button data-v="both">WOW + virtual</button><button data-v="wow">WOW</button><button data-v="virtual">Virtual</button><button data-v="open">Open</button></div>
+      <div class="card">
+        <h2>On-screen fader</h2>
+        <div class="row"><label>Style</label><div class="seg" id="faderStyle"><button data-v="pad">Tap pad</button><button data-v="slider">Slider</button></div></div>
+        <div class="row" id="padModeRow"><label>Touching</label><div class="seg" id="padMode"><button data-v="cuts">Cuts</button><button data-v="opens">Opens</button></div></div>
+        <div id="sliderOpts">
+          <div class="row"><label>Cut-in</label><input type="range" id="vfCut" class="grow" min="0.01" max="0.6" step="0.01" value="0.05"><output id="vfCutOut">5%</output></div>
+          <div class="row"><label>Curve</label><input type="range" id="vfWidth" class="grow" min="0.005" max="0.4" step="0.005" value="0.02"><output id="vfWidthOut">sharp</output></div>
+          <div class="row"><label>Hamster</label><button id="hamBtn">off</button></div>
+        </div>
       </div>
-      <h2 style="margin-top:14px">Virtual fader</h2>
-      <div class="row"><label>Cut-in</label><input type="range" id="vfCut" class="grow" min="0.01" max="0.6" step="0.01" value="0.05"><output id="vfCutOut">5%</output></div>
-      <div class="row"><label>Curve</label><input type="range" id="vfWidth" class="grow" min="0.005" max="0.4" step="0.005" value="0.02"><output id="vfWidthOut">sharp</output></div>
-      <div class="row"><label>Hamster</label><button id="hamBtn">off</button></div>
-      <h2 style="margin-top:14px">WOW fader</h2>
-      <div class="row"><label>Read it from</label>
-        <div class="seg" id="wowRead"><button data-v="pilot">Pilot tone</button><button data-v="level">Tone level</button></div>
-      </div>
-      <p class="note" id="wowReadNote"></p>
-      <div class="row"><label>Cut point</label><input type="range" id="faderLo" class="grow" min="0.01" max="0.5" step="0.01" value="0.08"><output id="faderLoOut">8%</output></div>
-      <div class="row"><label>Full open</label><input type="range" id="faderHi" class="grow" min="0.1" max="1" step="0.01" value="0.45"><output id="faderHiOut">45%</output></div>
-      <div class="row"><label>Noise gate</label><input type="range" id="gate" class="grow" min="-80" max="-30" step="1" value="-56"><output id="gateOut">-56 dB</output></div>
     </div>
-
-    <div class="card">
-      <h2>Control tone</h2>
-      <p class="note" style="margin-top:0">1500 Hz carrier with a sawtooth-like loudness pattern (direction is read from loudness — the WOW keeps fine waveform shape forward even in reverse) · mono 44.1 kHz 16-bit · 10 s loop.</p>
-      <div class="row">
-        <select id="toneLen"><option value="10" selected>10 s</option><option value="29">29 s</option></select>
-        <button id="toneBtn">Download WAV</button>
+    <div class="col">
+      <div class="card">
+        <h2>WOW fader</h2>
+        <div class="row"><label>Fader</label>
+          <div class="seg" id="faderMode"><button data-v="both">WOW + screen</button><button data-v="wow">WOW</button><button data-v="virtual">Screen</button><button data-v="open">Open</button></div>
+        </div>
+        <div class="row"><label>Read it by</label>
+          <div class="seg" id="wowRead"><button data-v="pilot">Pilot tone</button><button data-v="level">Tone level</button></div>
+        </div>
+        <p class="note" id="wowReadNote"></p>
+        <div class="row"><label>Cut point</label><input type="range" id="faderLo" class="grow" min="0.01" max="0.5" step="0.01" value="0.08"><output id="faderLoOut">8%</output></div>
+        <div class="row"><label>Fully open</label><input type="range" id="faderHi" class="grow" min="0.1" max="1" step="0.01" value="0.45"><output id="faderHiOut">45%</output></div>
+        <div class="row"><label>Tone gate</label><input type="range" id="gate" class="grow" min="-80" max="-30" step="1" value="-56"><output id="gateOut">-56 dB</output></div>
+        <p class="note">Below the gate the platter counts as stopped. Raise it if a stopped record slowly drifts.</p>
       </div>
-      <p class="note">Pilot tone (for <b>beats</b> folder, pilot-fader mode): 18 kHz · stereo 44.1 kHz · 10 s loop.</p>
-      <div class="row"><button id="pilotBtn">Download pilot WAV</button></div>
-      <div class="row"><button id="tcBtn">Download stereo timecode (SC-1000 / SC-500)</button></div>
     </div>
-  </aside>
+  </section>
 </main>
 
 <script type="text/plain" id="dsp-src">/*__DSP__*/</script>
@@ -311,7 +376,13 @@ const S = {
   calInfo: store.get('calInfo', null), outGain: store.get('outGain', 1), loopSec: store.get('loopSec', 4),
   control: store.get('control', 'wow'), tcType: store.get('tcType', '1000'), carrierHz: store.get('carrierHz', 1000), balance: store.get('balance', 1),
   faderStyle: store.get('faderStyle', 'pad'), padMode: store.get('padMode', 'cuts'),
+  tab: store.get('tab', 'scratch'), wowPark: store.get('wowPark', true),
 };
+{ // input channels by number (0-based), like the iPhone app; migrate the old L / R / L+R choices
+  const oc = store.get('ctrlCh', 'L'), ol = store.get('liveCh', 'S');
+  S.ctrlA = store.get('ctrlA', oc === 'R' ? 1 : 0); S.ctrlB = store.get('ctrlB', 1);
+  S.liveL = store.get('liveL', ol === 'R' ? 1 : 0); S.liveR = store.get('liveR', ol === 'L' ? 0 : 1);
+}
 const save = (k) => store.set(k, S[k]);
 
 let ctx, node, ctrlBus, liveMerger, master, outNodes = [];
@@ -358,7 +429,7 @@ async function start() {
 }
 
 function rawConstraints(deviceId) {
-  const a = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 }, latency: 0 };
+  const a = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 32 }, latency: 0 };   // as many channels as the device and browser will give
   if (deviceId) a.deviceId = { exact: deviceId };
   return a;
 }
@@ -376,27 +447,20 @@ function releaseUnusedStreams() {
   }
 }
 
-function pick(srcNode, ch, toNode, toInputs) {
-  // srcNode -> upmix(2) -> splitter -> chosen channel(s) -> toNode inputs
-  const up = new GainNode(ctx, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
-  const sp = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
-  srcNode.connect(up).connect(sp);
+// src (n channels) → splitter → the chosen channel numbers → inputs of `to`. map = [[srcChannel, toInput], …]
+function route(src, n, to, map) {
+  const up = new GainNode(ctx, { channelCount: n, channelCountMode: 'explicit', channelInterpretation: 'discrete' });
+  const sp = new ChannelSplitterNode(ctx, { numberOfOutputs: n });
+  src.connect(up).connect(sp);
   const nodes = [up, sp];
-  const link = (from, to, gain) => {
-    const g = new GainNode(ctx, { gain }); sp.connect(g, from); g.connect(toNode, 0, to); nodes.push(g);
-  };
-  if (toInputs.length === 1) {
-    if (ch === 'L') link(0, toInputs[0], 1);
-    else if (ch === 'R') link(1, toInputs[0], 1);
-    else { link(0, toInputs[0], 0.5); link(1, toInputs[0], 0.5); }
-  } else {
-    if (ch === 'S') { link(0, toInputs[0], 1); link(1, toInputs[1], 1); }
-    else if (ch === 'L') { link(0, toInputs[0], 1); link(0, toInputs[1], 1); }
-    else if (ch === 'R') { link(1, toInputs[0], 1); link(1, toInputs[1], 1); }
-    else { for (const t of toInputs) { link(0, t, 0.5); link(1, t, 0.5); } }
-  }
+  for (const [c, t] of map) { const g = new GainNode(ctx); sp.connect(g, Math.min(c, n - 1)); g.connect(to, 0, t); nodes.push(g); }
   return nodes;
 }
+function streamChannels(s) {
+  const t = s.getAudioTracks()[0], st = t && t.getSettings ? t.getSettings() : {};
+  return Math.max(1, st.channelCount || 2);
+}
+const chans = { ctrl: 2, live: 2 };
 
 function disconnectAll(list) { for (const n of list) { try { n.disconnect(); } catch (e) {} try { n.stop && n.stop(); } catch (e) {} } }
 
@@ -409,24 +473,52 @@ async function applyRouting() {
   $('simCard').style.display = sim ? '' : 'none';
   try {
     if (!sim) {
-      const s = await getStream(S.ctrlDev);
+      const s = await getStream(S.ctrlDev), n = streamChannels(s);
+      chans.ctrl = n;
       const src = new MediaStreamAudioSourceNode(ctx, { mediaStream: s });
-      ctrlSrcNodes = [src, ...(S.control === 'timecode' ? pick(src, 'S', ctrlBus, [0, 1]) : pick(src, S.ctrlCh, ctrlBus, [0]))];
+      ctrlSrcNodes = [src, ...route(src, n, ctrlBus, S.control === 'timecode' ? [[S.ctrlA, 0], [S.ctrlB, 1]] : [[S.ctrlA, 0]])];
     }
   } catch (err) { $('routeErr').textContent = 'Control input: ' + err.message; }
   try {
     $('liveFileRow').style.display = S.liveDev === 'file' ? '' : 'none';
-    let src = null;
+    let src = null, n = 2;
     if (S.liveDev === 'test' || S.liveDev === 'file') {
       const buf = S.liveDev === 'test' ? testBuffer : fileBuffer;
-      if (buf) { src = new AudioBufferSourceNode(ctx, { buffer: buf, loop: true }); src.start(); }
+      if (buf) { src = new AudioBufferSourceNode(ctx, { buffer: buf, loop: true }); src.start(); n = buf.numberOfChannels; }
     } else if (S.liveDev) {
-      const s = await getStream(S.liveDev);
+      const s = await getStream(S.liveDev); n = streamChannels(s);
       src = new MediaStreamAudioSourceNode(ctx, { mediaStream: s });
     }
-    if (src) liveSrcNodes = [src, ...pick(src, S.liveCh, liveMerger, [0, 1])];
+    chans.live = n;
+    if (src) liveSrcNodes = [src, ...route(src, n, liveMerger, [[S.liveL, 0], [S.liveR, 1]])];
   } catch (err) { $('routeErr').textContent = 'Live input: ' + err.message; }
   releaseUnusedStreams();
+  chanUI();
+}
+
+// channel pickers: one entry per channel the browser gives us from that device
+function chanUI() {
+  const fillN = (sel, n, val) => {
+    sel.innerHTML = '';
+    for (let c = 0; c < n; c++) { const o = document.createElement('option'); o.value = c; o.textContent = 'In ' + (c + 1); sel.appendChild(o); }
+    sel.value = Math.min(val, n - 1);
+  };
+  const sim = S.ctrlDev === 'sim', tc = S.control === 'timecode', fileish = S.liveDev === 'test' || S.liveDev === 'file';
+  fillN($('ctrlA'), chans.ctrl, S.ctrlA); fillN($('ctrlB'), chans.ctrl, S.ctrlB);
+  fillN($('liveL'), chans.live, S.liveL); fillN($('liveR'), chans.live, S.liveR);
+  document.querySelector('.ctrlChRow').style.display = sim ? 'none' : '';
+  $('ctrlBWrap').style.display = tc ? '' : 'none';
+  $('ctrlALbl').textContent = tc ? 'Timecode L' : 'WOW on';
+  $('mCtrlLbl').textContent = tc ? 'timecode' : 'WOW in';
+  $('liveChRow').style.display = fileish ? 'none' : '';
+  const few = (n) => n <= 2 ? ' If your interface has more inputs, this browser may only be passing the first two: use Chrome or Firefox, send the sources to inputs 1–2, or use the iPhone app.' : '';
+  $('ctrlNote').textContent = sim ? 'Drag the platter on the Scratch tab. No deck needed.'
+    : `${chans.ctrl} channel${chans.ctrl > 1 ? 's' : ''} from this device.` + (tc ? ' Pick the timecode deck’s left and right.' : ' The WOW is mono: pick the one input it’s on.') + few(chans.ctrl);
+  $('liveNote').textContent = fileish ? (S.liveDev === 'test' ? 'A built-in 120 bpm loop with “ahhh” and “fresh” stabs, so you can practise without other gear.' : 'Any audio file, played on a loop.')
+    : `${chans.live} channel${chans.live > 1 ? 's' : ''} from this device. For a mono source, pick the same input for L and R.` + few(chans.live);
+}
+for (const [id, key] of [['ctrlA', 'ctrlA'], ['ctrlB', 'ctrlB'], ['liveL', 'liveL'], ['liveR', 'liveR']]) {
+  $(id).addEventListener('change', (e) => { S[key] = parseInt(e.target.value, 10); save(key); if (node) applyRouting(); });
 }
 
 async function refreshDevices() {
@@ -440,7 +532,7 @@ async function refreshDevices() {
   };
   const inOpts = ins.map((d, i) => [d.deviceId, d.label || ('Input ' + (i + 1))]);
   fill($('ctrlDev'), [['sim', '◎ Virtual platter (test)'], ...inOpts], S.ctrlDev);
-  fill($('liveDev'), [['test', '♫ Built-in test loop'], ['file', '📂 Audio file…'], ...inOpts], S.liveDev);
+  fill($('liveDev'), [['test', '♫ Built-in “ahhh / fresh” loop'], ['file', '📂 Audio file…'], ...inOpts], S.liveDev);
   if ('setSinkId' in AudioContext.prototype) {
     fill($('outDev'), outs.map((d, i) => [d.deviceId === 'default' ? '' : d.deviceId, d.label || ('Output ' + (i + 1))]), S.outDev);
   } else $('outRow').style.display = 'none';
@@ -508,8 +600,8 @@ function onMsg(m) {
     dv.setUint32(28, m.sr * ch * 4, true); dv.setUint16(32, ch * 4, true); dv.setUint16(34, 32, true); w(36, 'data'); dv.setUint32(40, m.buf.length * 4, true);
     new Float32Array(buf, 44).set(m.buf);
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
-    a.download = 'scratcher-diagnostic.wav'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    $('recRes').textContent = 'saved scratcher-diagnostic.wav'; $('recBtn').disabled = false;
+    a.download = 'liveskratch-diagnostic.wav'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    $('recRes').textContent = 'saved liveskratch-diagnostic.wav'; $('recBtn').disabled = false;
   } else if (m.type === 'calibrated') {
     const el = $('calRes');
     if (m.activeFrac < 0.9 || m.speed <= 0) { el.textContent = 'No steady control tone — check routing, balance knob, and that the tone is playing.'; el.className = 'calres bad'; return; }
@@ -658,7 +750,7 @@ function draw() {
   $('chLive').classList.toggle('lit', !st.frozen && lagMs < 1);
   $('chFrz').classList.toggle('lit', !!st.frozen);
   $('freezeBtn').classList.toggle('on', !!st.frozen);
-  setBar($('mCtrl'), st.ctrlPk); setBar($('mLive'), st.livePk); setBar($('mOut'), st.outPk);
+  document.querySelectorAll('.mCtrl').forEach(e => setBar(e, st.ctrlPk)); document.querySelectorAll('.mLive').forEach(e => setBar(e, st.livePk)); document.querySelectorAll('.mOut').forEach(e => setBar(e, st.outPk));
   requestAnimationFrame(draw);
 }
 
@@ -703,11 +795,9 @@ function syncButtons() {
   $('hamBtn').textContent = S.hamster ? 'on' : 'off'; $('hamBtn').classList.toggle('on', S.hamster);
 }
 
-seg('ctrlCh', 'ctrlCh', () => node && applyRouting());
-seg('liveCh', 'liveCh', () => node && applyRouting());
 function controlUI() {
   $('tcRow').style.display = S.control === 'timecode' ? '' : 'none';
-  $('ctrlChRow').style.display = S.control === 'timecode' ? 'none' : '';
+  chanUI();
 }
 seg('control', 'control', () => {   // a different signal: the old calibration no longer applies
   S.calInfo = null; S.flip = false; S.calib = 1; S.balance = 1; ['calInfo', 'flip', 'calib', 'balance'].forEach(save);
@@ -719,14 +809,14 @@ controlUI();
 let padDown = false;
 function padUI() {
   const pad = S.faderStyle === 'pad', cuts = S.padMode === 'cuts', on = cuts ? !padDown : padDown;
-  $('pad').style.display = pad ? '' : 'none'; $('padMode').style.display = pad ? '' : 'none';
+  $('pad').style.display = pad ? '' : 'none'; $('padModeRow').style.display = pad ? '' : 'none'; $('sliderOpts').style.display = pad ? 'none' : '';
   $('xf').style.display = pad ? 'none' : '';
   $('pad').classList.toggle('off', !on); $('pad').classList.toggle('down', padDown);
   $('padLbl').textContent = cuts ? (padDown ? 'CUT' : 'Tap to cut') : (padDown ? 'OPEN' : 'Hold to open');
   $('padSub').textContent = on ? 'SOUND ON' : 'SOUND OFF';
   if (pad) $('xfState').textContent = on ? 'open' : 'cut';
   $('xfNote').innerHTML = pad ? 'Tap the pad in rhythm to chop the sound, like a PT01 cut switch. Hold <kbd>C</kbd> to cut.'
-    : 'Drag the fader, or hold <kbd>C</kbd> to cut. The green zone is where the scratch is audible; set its size, curve and hamster in <b>Fader</b>.';
+    : 'Drag the fader, or hold <kbd>C</kbd> to cut. The green zone is where the scratch is audible; set its size, curve and hamster on the <b>Feel</b> tab.';
 }
 function setPad(down) { padDown = down; param({ padOpen: S.padMode === 'cuts' ? !down : down }); padUI(); }
 $('pad').addEventListener('pointerdown', (e) => { $('pad').setPointerCapture(e.pointerId); setPad(true); });
@@ -814,7 +904,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => { if (node && e.code === 'KeyC') node.port.postMessage({ type: 'softCut', on: false }); });
 
 // ---------- control tone WAV ----------
-function wavDownload(name, sr, ch, n, sampleAt) {
+function wavBytes(sr, ch, n, sampleAt) {
   const bytes = 44 + n * 2 * ch; const buf = new ArrayBuffer(bytes); const dv = new DataView(buf);
   const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
   w(0, 'RIFF'); dv.setUint32(4, bytes - 8, true); w(8, 'WAVE'); w(12, 'fmt ');
@@ -822,79 +912,370 @@ function wavDownload(name, sr, ch, n, sampleAt) {
   dv.setUint32(28, sr * 2 * ch, true); dv.setUint16(32, 2 * ch, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 2 * ch, true);
   const out = new Int16Array(buf, 44);
   for (let i = 0; i < n; i++) { const v = sampleAt(i, 0); for (let c = 0; c < ch; c++) out[i * ch + c] = c && sampleAt.length > 1 ? sampleAt(i, c) : v; }
+  return buf;
+}
+function wavDownload(name, sr, ch, n, sampleAt) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })); a.download = name; a.click();
+  a.href = URL.createObjectURL(new Blob([wavBytes(sr, ch, n, sampleAt)], { type: 'audio/wav' })); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
+const controlSample = (i) => { const th = 2 * Math.PI * 1500 * i / 44100; return Math.round(Math.exp(toneLogAmp(th)) * Math.sin(th) * 0.89 * 32767); };
+const pilotSample = (i) => Math.round(Math.sin(2 * Math.PI * 20 * (i % 49) / 49) * 0.7 * 32767);   // 49 samples = exactly 20 cycles of 18 kHz
 // Formats match the WOW's own stock files: samples mono 44.1 kHz, beats stereo 44.1 kHz, 16-bit.
 $('toneBtn').addEventListener('click', () => {
   // Pure 1500 Hz carrier with a lopsided-triangle loudness envelope (rise 32 ms / fall 8 ms of file).
   // 10 s = 250 whole envelope periods → seamless loop. Same formula as toneSample() in dsp.js.
   const secs = parseInt($('toneLen').value, 10), sr = 44100;
-  wavDownload('00-scratcher-control.wav', sr, 1, sr * secs, i => {
-    const th = 2 * Math.PI * 1500 * i / sr;
-    return Math.round(Math.exp(toneLogAmp(th)) * Math.sin(th) * 0.89 * 32767);
-  });
+  wavDownload('00-liveskratch-control.wav', sr, 1, sr * secs, controlSample);
 });
 $('tcBtn').addEventListener('click', () => {
   const sr = 44100;   // 10 s = 10 000 whole 1 kHz cycles: loops seamlessly. Left = cos, right = sin.
   wavDownload('00-liveskratch-timecode.wav', sr, 2, sr * 10, (i, c) => Math.round((c ? Math.sin : Math.cos)(2 * Math.PI * 1000 * i / sr) * 0.7 * 32767));
 });
 $('pilotBtn').addEventListener('click', () => {
-  const sr = 44100; // 49 samples = exactly 20 cycles of 18 kHz → seamless loop
-  wavDownload('00-scratcher-pilot.wav', sr, 2, sr * 10, i => Math.round(Math.sin(2 * Math.PI * 20 * (i % 49) / 49) * 0.7 * 32767));
+  const sr = 44100;
+  wavDownload('00-liveskratch-pilot.wav', sr, 2, sr * 10, pilotSample);
 });
 
-// ---------- built-in test loop (boom-bap + an "ahh" stab) ----------
+// ---------- built-in test loop: 4 s at 120 bpm, kick / snare / hats / bass, and formant-voice "ahhh" and "fresh" stabs ----------
+// Same synthesis as the iPhone app's TestLoop.synthetic: every sound is made from scratch, no samples.
 async function renderTestLoop(sr) {
-  const bpm = 92, beat = 60 / bpm, bars = 2, len = beat * 4 * bars;
-  const oc = new OfflineAudioContext(2, Math.ceil(len * sr), sr);
-  const noise = oc.createBuffer(1, sr, sr); const nd = noise.getChannelData(0);
-  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-  const bus = oc.createGain(); bus.gain.value = 0.8; bus.connect(oc.destination);
-  const kick = (t) => {
-    const o = oc.createOscillator(), g = oc.createGain();
-    o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
-    g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
-    o.connect(g).connect(bus); o.start(t); o.stop(t + 0.4);
-  };
-  const snare = (t) => {
-    const n = oc.createBufferSource(); n.buffer = noise;
-    const hp = oc.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 2200; hp.Q.value = 0.6;
-    const g = oc.createGain(); g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-    n.connect(hp).connect(g).connect(bus); n.start(t); n.stop(t + 0.25);
-    const o = oc.createOscillator(), og = oc.createGain(); o.type = 'triangle'; o.frequency.value = 185;
-    og.gain.setValueAtTime(0.5, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-    o.connect(og).connect(bus); o.start(t); o.stop(t + 0.12);
-  };
-  const hat = (t, a) => {
-    const n = oc.createBufferSource(); n.buffer = noise;
-    const hp = oc.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7500;
-    const g = oc.createGain(); g.gain.setValueAtTime(a, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-    n.connect(hp).connect(g).connect(bus); n.start(t); n.stop(t + 0.06);
-  };
-  const ahh = (t, dur, root) => {
-    const f1 = oc.createBiquadFilter(), f2 = oc.createBiquadFilter(), mix = oc.createGain();
-    f1.type = 'bandpass'; f1.frequency.value = 780; f1.Q.value = 6;
-    f2.type = 'bandpass'; f2.frequency.value = 1180; f2.Q.value = 7;
-    const g = oc.createGain();
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1.6, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    for (const ratio of [1, 1.189, 1.498]) {
-      const o = oc.createOscillator(); o.type = 'sawtooth'; o.frequency.value = root * ratio;
-      o.frequency.setValueAtTime(root * ratio * 1.03, t); o.frequency.exponentialRampToValueAtTime(root * ratio, t + 0.08);
-      o.connect(f1); o.connect(f2); o.start(t); o.stop(t + dur + 0.05);
-    }
-    f1.connect(mix); f2.connect(mix); mix.connect(g).connect(bus);
-  };
-  for (let b = 0; b < bars; b++) {
-    const t0 = b * beat * 4;
-    [0, 0.75, 2.5].forEach(k => kick(t0 + k * beat));
-    if (b === 1) kick(t0 + 3.25 * beat);
-    [1, 3].forEach(k => snare(t0 + k * beat));
-    for (let h = 0; h < 8; h++) hat(t0 + h * beat / 2, h % 2 ? 0.18 : 0.32);
+  const frames = Math.floor(4 * sr), L = new Float32Array(frames), R = new Float32Array(frames), beat = sr / 2;
+  let seed = 99;
+  const noise = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2147483648 - 1; };
+  const add = (i, l, r) => { if (i >= 0 && i < frames) { L[i] += l; R[i] += r; } };
+  const notes = [55, 55, 65.4, 49, 55, 55, 73.4, 65.4];
+  for (let b = 0; b < 8; b++) {
+    const s0 = Math.floor(b * beat);
+    if (b % 2 === 0 || b === 7) { let ph = 0;                                   // kick
+      for (let k = 0; k < Math.floor(0.35 * sr); k++) { const t = k / sr; ph += 2 * Math.PI * (48 + 110 * Math.exp(-t * 30)) / sr;
+        const v = 0.6 * Math.sin(ph) * Math.exp(-t * 7); add(s0 + k, v, v); } }
+    if (b % 2 === 1) for (let k = 0; k < Math.floor(0.25 * sr); k++) { const t = k / sr;   // snare
+      const v = (0.35 * noise() + 0.25 * Math.sin(2 * Math.PI * 190 * t)) * Math.exp(-t * 18); add(s0 + k, v * 0.9, v); }
+    for (let h = 0; h < 2; h++) { const hs = s0 + Math.floor(h * beat / 2);    // hats
+      for (let k = 0; k < Math.floor(0.05 * sr); k++) { const t = k / sr, v = 0.12 * noise() * Math.exp(-t * 90);
+        add(hs + k, v * (h === 0 ? 1 : 0.6), v * (h === 0 ? 0.6 : 1)); } }
+    let ph = 0;                                                                // bass
+    for (let k = 0; k < Math.floor(beat * 0.9); k++) { const t = k / sr; ph += 2 * Math.PI * notes[b] / sr;
+      const v = 0.22 * Math.tanh(2.5 * Math.sin(ph)) * Math.exp(-t * 2.5); add(s0 + k, v, v); }
   }
-  ahh(0, 0.55, 220); ahh(beat * 6.5, 0.4, 196);
-  return oc.startRendering();
+  // a voiced source (sawtooth with vibrato) through two resonators: the formants make the vowel
+  const voice = (s0, dur, f0, gain, formants, env) => {
+    let ph = 0, b1 = 0, b2 = 0, c1 = 0, c2 = 0; const n = Math.floor(dur * sr), buf = new Float64Array(n), r = 0.993;
+    for (let k = 0; k < n; k++) { const t = k / sr;
+      ph += 2 * Math.PI * f0 * (1 + 0.03 * Math.sin(2 * Math.PI * 5.5 * t)) / sr;
+      const src = (ph % (2 * Math.PI)) / Math.PI - 1, [f1, f2] = formants(t);
+      const w1 = 2 * Math.PI * f1 / sr, w2 = 2 * Math.PI * f2 / sr;
+      const y1 = src + 2 * r * Math.cos(w1) * b1 - r * r * b2; b2 = b1; b1 = y1;
+      const y2 = src + 2 * r * Math.cos(w2) * c1 - r * r * c2; c2 = c1; c1 = y2;
+      buf[k] = (y1 + 0.6 * y2) * env(t); }
+    let pk = 0; for (const v of buf) pk = Math.max(pk, Math.abs(v));
+    for (let k = 0; k < n; k++) { const v = buf[k] * gain / Math.max(pk, 1e-9); add(s0 + k, v, v); }
+  };
+  const hiss = (s0, dur, fc, gain, env) => {          // a band of noise: "f" ≈ 6 kHz, "sh" ≈ 2.8 kHz
+    let b1 = 0, b2 = 0; const n = Math.floor(dur * sr), buf = new Float64Array(n), r = 0.9, w = 2 * Math.PI * Math.min(fc, 0.45 * sr) / sr;
+    for (let k = 0; k < n; k++) { const t = k / sr, y = noise() + 2 * r * Math.cos(w) * b1 - r * r * b2; b2 = b1; b1 = y; buf[k] = y * env(t); }
+    let pk = 0; for (const v of buf) pk = Math.max(pk, Math.abs(v));
+    for (let k = 0; k < n; k++) { const v = buf[k] * gain / Math.max(pk, 1e-9); add(s0 + k, v * 0.95, v); }
+  };
+  for (const b of [0, 4]) voice(Math.floor(b * beat), 0.7, 210, 0.55, () => [780, 1180], t => Math.min(1, t * 40) * Math.exp(-t * 2.6));   // "ahhh"
+  for (const b of [2, 6]) {                                                                                                                // "fresh"
+    const s0 = Math.floor(b * beat);
+    hiss(s0, 0.07, 6000, 0.12, t => Math.sin(Math.PI * t / 0.07));
+    voice(s0 + Math.floor(0.05 * sr), 0.2, 190, 0.5, t => { const u = Math.min(1, t / 0.07); return [380 + 170 * u, 1250 + 650 * u]; },
+          t => Math.min(1, t * 60) * (t < 0.15 ? 1 : Math.max(0, 1 - (t - 0.15) / 0.05)));
+    hiss(s0 + Math.floor(0.22 * sr), 0.32, 2800, 0.3, t => Math.min(1, t * 30) * Math.exp(-t * 6));
+  }
+  let pk = 0; for (let i = 0; i < frames; i++) pk = Math.max(pk, Math.abs(L[i]), Math.abs(R[i]));
+  if (pk > 0.9) { const g = 0.9 / pk; for (let i = 0; i < frames; i++) { L[i] *= g; R[i] *= g; } }
+  const buf = new AudioBuffer({ numberOfChannels: 2, length: frames, sampleRate: sr });
+  buf.copyToChannel(L, 0); buf.copyToChannel(R, 1);
+  return buf;
+}
+
+// ---------- tabs ----------
+function showTab() {
+  for (const t of ['scratch', 'setup', 'feel']) $('tab-' + t).classList.toggle('on', S.tab === t);
+  if (S.tab === 'scratch' && S.faderStyle === 'slider') drawXf();
+}
+seg('tab', 'tab', showTab);
+showTab();
+
+// ---------- help (?) and the first-time walkthrough: same text as the iPhone app, adapted for a browser ----------
+const HELP = {
+  scratch: ['The Scratch tab', [
+    ['Watching', [
+      ['◎', 'Platter', 'Turns with your deck’s platter. With Virtual platter chosen on the Setup tab, drag it with the mouse to scratch.'],
+      ['×', 'Speed, direction, behind live', 'Speed is in multiples of normal (1× = motor speed). Behind live is how far the needle sits behind the audio coming in right now.'],
+      ['∿', 'Tape strip', 'The last 10 seconds of incoming audio. The red line is the needle; when frozen, the shaded area is the loop you’re scratching.'],
+      ['●', 'Status lights', 'Signal: the control signal is coming in. 1× lock: the platter is at normal speed, so playback locks to live. Live: you’re hearing right now. Frozen: you’re scratching a held loop.'],
+    ]],
+    ['Playing', [
+      ['▮', 'Fader pad', 'An on-screen cut switch, like a PT01’s: press it to chop the sound in rhythm with your scratches. It works together with the WOW’s own fader: sound plays only when both are open. On the Feel tab you can make pressing open the sound instead, or switch to a slider.'],
+      ['❄', 'Freeze', 'Stops taking in new audio, so the last few seconds become a fixed loop you can scratch over and over. Press again to go back to live.'],
+      ['⇥', 'Live', 'Jumps the needle back to right now. After a scratch it also snaps back by itself once the platter is back at 1× (Feel tab).'],
+      ['⌨', 'Keys', 'Space: back to live. F: freeze. Hold C: cut. ?: this help.'],
+    ]],
+  ]],
+  setup: ['Setup', [
+    ['Signals', [
+      ['◉', 'Control signal', 'WOW tone: the LiveSkratch tone played by a WOW (its output is mono, so pick the one input it’s on). Stereo timecode: Serato or Traktor control vinyl or CDs, or the LiveSkratch timecode file played by an SC-1000 / SC-500. Timecode needs two inputs and tracks even more tightly.'],
+      ['♫', 'What you scratch', 'The built-in “ahhh / fresh” loop or any audio file, so you can practise without other gear, or a live input from your interface: pick its left and right inputs (the same input twice for a mono source).'],
+      ['◎', 'Virtual platter', 'Choose it as the control to scratch by dragging the on-screen platter. No deck needed.'],
+      ['▸', 'Output', 'Pick an output your interface doesn’t mix with its own direct monitoring, or turn direct monitoring off, so you hear only the scratch and not the raw tone.'],
+      ['⚠', 'Browser', 'Use Chrome or Firefox. Other browsers may pass only 2 channels in and out, so an interface’s other inputs and outputs (a TX-6’s 12, say) won’t show up. Switching the WOW from here needs Chrome or Edge.'],
+    ]],
+    ['WOW setup', [
+      ['⏏', 'Choose the WOW drive (once)', 'Plug the WOW into your computer with USB so it shows up as a drive. Press Choose the WOW drive, pick the WOW, and allow Chrome to edit it. Needs Chrome or Edge.'],
+      ['⇄', 'Normal ↔ LiveSkratch', 'LiveSkratch mode puts your own beats and samples aside on the WOW, loads the control tone and pilot beat, and sets the fader to cut the pilot. Normal puts everything back, with the fader cutting only the samples so the beat always plays.'],
+      ['↻', 'Then eject and restart', 'Eject the WOW and turn it off and on: it only reads its files when it starts.'],
+    ]],
+    ['Getting ready', [
+      ['⌖', 'Calibrate', 'Once per session: motor on, hands off, fader open, then Calibrate. It measures the deck’s exact speed and levels (and finds the pilot tone).'],
+      ['◍', 'Diagnostics', 'Records 10 seconds of what the app hears and plays as a WAV. Send it if something doesn’t sound right.'],
+    ]],
+  ]],
+  feel: ['Feel', [
+    ['Feel', [
+      ['∿', 'Smoothing', 'Lower is tighter and more immediate; higher is smoother but slightly laggy.'],
+      ['↩', 'After a scratch', 'Snap to live returns to live audio once the platter is back at normal speed (after the snap delay). Stay behind keeps playing from where you left the needle.'],
+      ['⊙', '1× lock', 'When the platter runs at motor speed, play exactly in time with live audio so it never drifts.'],
+      ['❄', 'Freeze loop', 'How many seconds Freeze holds on to.'],
+    ]],
+    ['On-screen fader', [
+      ['▮', 'Tap pad or slider', 'Tap pad: a cut switch you press in rhythm. Choose whether pressing it cuts or opens the sound.'],
+      ['═', 'Slider: Cut-in, Curve, Hamster', 'Cut-in is how far you move before sound starts; Curve is how quickly it reaches full volume; Hamster flips the direction.'],
+    ]],
+    ['WOW fader', [
+      ['◐', 'Fader', 'Which faders control the sound: the WOW’s own, the on-screen one, both, or neither.'],
+      ['≈', 'Read it by', 'Pilot tone (recommended): the WOW’s fader cuts a high pilot beat, so the platter keeps being tracked through every cut. Tone level is for a WOW set up without the pilot.'],
+      ['╱', 'Cut point, Fully open', 'Where along the WOW fader’s travel the sound starts and reaches full volume.'],
+      ['▁', 'Tone gate', 'Below this level the platter counts as stopped. Raise it if a stopped record slowly drifts.'],
+    ]],
+  ]],
+};
+const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+function openHelp() {
+  const [title, secs] = HELP[S.tab];
+  $('helpTitle').textContent = title;
+  $('helpBody').innerHTML = secs.map(([h, items]) => `<h4>${esc(h)}</h4>` + items.map(([ic, t, d]) =>
+    `<div class="hitem"><span class="ic">${ic}</span><div><b>${esc(t)}</b><p>${esc(d)}</p></div></div>`).join('')).join('');
+  $('help').hidden = false;
+}
+const closeHelp = () => { $('help').hidden = true; };
+$('helpBtn').addEventListener('click', openHelp);
+$('helpDone').addEventListener('click', closeHelp);
+$('help').addEventListener('click', (e) => { if (e.target === $('help')) closeHelp(); });
+$('helpWalk').addEventListener('click', () => { closeHelp(); openWalk(); });
+
+const WALK = [
+  ['◎', 'Scratch anything, live', [
+    'Your deck plays a control signal instead of music: the LiveSkratch tone on a WOW, or Serato / Traktor timecode.',
+    'LiveSkratch reads the platter’s every move from it and scratches whatever audio is coming in right now: a synth, a mic, a drum machine.',
+    'No gear yet? Try the built-in loop with the on-screen platter.']],
+  ['⏏', '1 · Put the WOW in LiveSkratch mode', [
+    'Plug the WOW into your computer with USB so it shows up as a drive.',
+    'Setup tab → WOW setup → Choose the WOW drive, pick the WOW, and let Chrome edit it.',
+    'Switch to LiveSkratch.',
+    'Eject the WOW and restart it. Switch back to Normal the same way whenever you like: your beats and samples come back exactly as they were.',
+    'Using timecode instead? Skip this step.']],
+  ['⇌', '2 · Plug in', [
+    'Connect your audio interface.',
+    'WOW output → one input. The audio you want to scratch → another input.',
+    'Setup tab: pick the control input and its channel, what you scratch (its L and R inputs), and an output.']],
+  ['⌖', '3 · Calibrate', [
+    'Start the motor and let it spin.',
+    'Hands off the platter, fader open.',
+    'Setup tab → Calibrate. It takes 1.5 seconds and measures your deck’s exact speed and levels.']],
+  ['✋', '4 · Scratch', [
+    'Scratch tab: move the record and the live audio moves with it.',
+    'The WOW’s fader and the on-screen pad both cut the sound: press the pad to chop. Freeze holds a loop; Live jumps back to now.',
+    'Fine-tune the fader and feel on the Feel tab.',
+    'Press ? on any tab for help.']],
+];
+let walkPage = 0;
+function drawWalk() {
+  const [ic, title, steps] = WALK[walkPage];
+  $('walkBody').innerHTML = `<div class="big">${ic}</div><h3>${esc(title)}</h3><ul>${steps.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` +
+    (walkPage === 0 ? '<div class="row" style="margin-top:14px"><button id="walkTry">Try it now with the on-screen platter</button></div>' : '');
+  $('walkDots').innerHTML = WALK.map((_, i) => `<i class="${i === walkPage ? 'on' : ''}"></i>`).join('');
+  $('walkBack').style.visibility = walkPage ? 'visible' : 'hidden';
+  $('walkNext').textContent = walkPage < WALK.length - 1 ? 'Next' : 'Start scratching';
+  const tryBtn = $('walkTry');
+  if (tryBtn) tryBtn.addEventListener('click', async () => {
+    S.ctrlDev = 'sim'; S.liveDev = 'test'; save('ctrlDev'); save('liveDev'); S.tab = 'scratch'; save('tab');
+    document.querySelectorAll('#tab button').forEach(b => b.classList.toggle('on', b.dataset.v === 'scratch')); showTab();
+    closeWalk();
+    if (node) { $('ctrlDev').value = 'sim'; $('liveDev').value = 'test'; applyRouting(); } else $('startBtn').click();
+  });
+}
+function openWalk() { walkPage = 0; drawWalk(); $('walk').hidden = false; }
+function closeWalk() { $('walk').hidden = true; store.set('seenWalkthrough', true); }
+$('walkSkip').addEventListener('click', closeWalk);
+$('walkBack').addEventListener('click', () => { if (walkPage > 0) { walkPage--; drawWalk(); } });
+$('walkNext').addEventListener('click', () => { if (walkPage < WALK.length - 1) { walkPage++; drawWalk(); } else closeWalk(); });
+$('gateWalk').addEventListener('click', openWalk);
+if (!store.get('seenWalkthrough', false)) openWalk();
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeHelp(); if (!$('walk').hidden) closeWalk(); }
+  else if (e.key === '?' && e.target.tagName !== 'INPUT') { $('help').hidden ? openHelp() : closeHelp(); }
+});
+
+// ---------- WOW setup: switch a WOW between Normal and LiveSkratch from the browser ----------
+// Port of the iPhone app's WowDrive: the settings backup and your parked beats / samples live on the WOW itself,
+// in a LiveSkratch/ folder, so they travel with the device. Uses the File System Access API (Chrome, Edge).
+const WOW = {
+  control: '00-liveskratch-control.wav', pilot: '00-liveskratch-pilot.wav',
+  legacy: ['00-scratcher-control.wav', '00-scratcher-pilot.wav'],
+  marker: '.liveskratch-mode', legacyMarker: '.scratcher-mode', keep: 'LiveSkratch',
+  liveValues: [['fader_left', 'beat'], ['fader_right', 'beat'], ['delay_strength', '0'], ['reverb_strength', '0']],
+  normalValues: [['fader_left', 'sample'], ['fader_right', 'sample']],   // Normal: the fader cuts the samples, never the beat
+};
+let wowDir = null, wowSettings = null;
+const idb = (mode, fn) => new Promise((res, rej) => {
+  const rq = indexedDB.open('liveskratch', 1);
+  rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+  rq.onerror = () => rej(rq.error);
+  rq.onsuccess = () => { const tx = rq.result.transaction('kv', mode), r = fn(tx.objectStore('kv')); tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); };
+});
+const exists = async (dir, name, kind) => { try { await (kind === 'dir' ? dir.getDirectoryHandle(name) : dir.getFileHandle(name)); return true; } catch (e) { return false; } };
+const readText = async (dir, name) => {
+  const buf = await (await (await dir.getFileHandle(name)).getFile()).arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { return new TextDecoder('latin1').decode(buf); }
+};
+async function writeFile(dir, name, data) {
+  const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+  await w.write(data); await w.close();
+}
+async function copyFile(fromDir, name, toDir, toName = name) {
+  const f = await (await fromDir.getFileHandle(name)).getFile();
+  await writeFile(toDir, toName, await f.arrayBuffer());
+}
+async function moveFile(fromDir, name, toDir) { await copyFile(fromDir, name, toDir); await fromDir.removeEntry(name); }
+const tryRemove = async (dir, name) => { try { await dir.removeEntry(name); } catch (e) {} };
+const setKey = (text, key, value) => text.replace(new RegExp('^(' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*=\\s*)[^\\r\\n]*', 'm'), (_, p) => p + value);
+const getKey = (text, key) => { const m = text.match(new RegExp('^' + key + '\\s*=\\s*([^\\r\\n]*)', 'm')); return m ? m[1].trim() : '—'; };
+
+async function findSettings(dir) {
+  for (const name of ['wow_settings.txt', 'settings.txt', 'scsettings.txt']) {
+    try { const t = await readText(dir, name); if (/wowmachine/i.test(t) || /fader_left/.test(t)) return name; } catch (e) {}
+  }
+  return null;
+}
+async function wowMode() {
+  if (await exists(wowDir, WOW.marker)) return 'liveskratch';
+  if (await exists(wowDir, WOW.legacyMarker)) return 'liveskratch-mac';
+  return 'normal';
+}
+async function wowRefresh(msg) {
+  $('wowMode').querySelectorAll('button').forEach(b => { b.disabled = !wowDir; });
+  if (!wowDir) { $('wowName').textContent = 'not chosen'; $('wowState').textContent = msg || ''; return; }
+  try {
+    const mode = await wowMode(), t = await readText(wowDir, wowSettings), m = mode === 'normal' ? 'normal' : 'liveskratch';
+    $('wowMode').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === m));
+    $('wowName').textContent = wowDir.name; $('wowName').className = 'calres good';
+    $('wowState').innerHTML = (msg ? esc(msg) + '<br>' : '') + `Now: <b>${mode === 'normal' ? 'Normal' : 'LiveSkratch'}</b>` +
+      (mode === 'liveskratch-mac' ? ' (set by the Mac script)' : '') +
+      ` · fader_left = ${esc(getKey(t, 'fader_left'))}, fader_right = ${esc(getKey(t, 'fader_right'))}`;
+  } catch (e) { $('wowState').textContent = 'Can’t read the WOW: ' + e.message; }
+}
+async function useWowDir(dir, ask) {
+  const perm = { mode: 'readwrite' };
+  if ((await dir.queryPermission(perm)) !== 'granted') {
+    if (!ask || (await dir.requestPermission(perm)) !== 'granted') { wowDir = null; wowRefresh(ask ? 'Chrome needs permission to edit the WOW.' : `Press Choose the WOW drive to reconnect ${dir.name}.`); return false; }
+  }
+  const name = await findSettings(dir);
+  if (!name) { wowDir = null; wowRefresh('That folder doesn’t look like a WOW (no wow_settings.txt with fader settings). Pick the top of the WOW drive.'); return false; }
+  if (!(await exists(dir, 'samples', 'dir')) || !(await exists(dir, 'beats', 'dir'))) { wowDir = null; wowRefresh('Found the WOW settings, but no samples and beats folders next to them.'); return false; }
+  wowDir = dir; wowSettings = name;
+  try { await idb('readwrite', st => st.put(dir, 'wowDir')); } catch (e) {}
+  wowRefresh(); return true;
+}
+async function audioFiles(dir) {
+  const out = [];
+  for await (const [name, h] of dir.entries()) if (h.kind === 'file' && !name.startsWith('.') && /\.(wav|mp3)$/i.test(name)) out.push(name);
+  return out;
+}
+async function cleanDotFiles() {
+  for (const d of [wowDir, await wowDir.getDirectoryHandle('samples'), await wowDir.getDirectoryHandle('beats')]) {
+    const names = []; for await (const [name] of d.entries()) if (name.startsWith('._')) names.push(name);
+    for (const n of names) await tryRemove(d, n);
+  }
+}
+const isOurs = (n) => n === WOW.control || n === WOW.pilot || WOW.legacy.includes(n);
+
+async function toLiveSkratch(park) {
+  const keep = await wowDir.getDirectoryHandle(WOW.keep, { create: true });
+  const samples = await wowDir.getDirectoryHandle('samples'), beats = await wowDir.getDirectoryHandle('beats');
+  if ((await wowMode()) === 'normal') await copyFile(wowDir, wowSettings, keep, 'settings-normal.txt');   // never overwrite a Normal backup with LiveSkratch values
+  let parked = 0;
+  if (park) {
+    const pk = await keep.getDirectoryHandle('parked', { create: true });
+    for (const [sub, dir] of [['samples', samples], ['beats', beats]]) {
+      const dst = await pk.getDirectoryHandle(sub, { create: true });
+      for (const n of await audioFiles(dir)) if (!isOurs(n)) { await moveFile(dir, n, dst); parked++; }
+    }
+  }
+  for (const n of WOW.legacy) { await tryRemove(samples, n); await tryRemove(beats, n); }
+  await writeFile(samples, WOW.control, wavBytes(44100, 1, 441000, controlSample));
+  await writeFile(beats, WOW.pilot, wavBytes(44100, 2, 441000, pilotSample));
+  let t = await readText(wowDir, wowSettings);
+  for (const [k, v] of WOW.liveValues) t = setKey(t, k, v);
+  await writeFile(wowDir, wowSettings, t);
+  await tryRemove(wowDir, WOW.legacyMarker);
+  await writeFile(wowDir, WOW.marker, new Date().toISOString());
+  await cleanDotFiles();
+  return parked ? `LiveSkratch mode. Parked ${parked} file${parked === 1 ? '' : 's'} in LiveSkratch/parked on the WOW.` : 'LiveSkratch mode.';
+}
+async function toNormal() {
+  let note = '';
+  const keep = (await exists(wowDir, WOW.keep, 'dir')) ? await wowDir.getDirectoryHandle(WOW.keep) : null;
+  if (keep && await exists(keep, 'settings-normal.txt')) await copyFile(keep, 'settings-normal.txt', wowDir, wowSettings);
+  else note = ' The original settings backup is on the Mac that ran the script, so delay and reverb stay at 0.';
+  let t = await readText(wowDir, wowSettings);
+  for (const [k, v] of WOW.normalValues) t = setKey(t, k, v);
+  await writeFile(wowDir, wowSettings, t);
+  const samples = await wowDir.getDirectoryHandle('samples'), beats = await wowDir.getDirectoryHandle('beats');
+  for (const n of [WOW.control, ...WOW.legacy]) await tryRemove(samples, n);
+  for (const n of [WOW.pilot, ...WOW.legacy]) await tryRemove(beats, n);
+  let restored = 0;
+  if (keep && await exists(keep, 'parked', 'dir')) {
+    const pk = await keep.getDirectoryHandle('parked');
+    for (const [sub, dir] of [['samples', samples], ['beats', beats]]) {
+      if (!(await exists(pk, sub, 'dir'))) continue;
+      const src = await pk.getDirectoryHandle(sub), names = [];
+      for await (const [name, h] of src.entries()) if (h.kind === 'file' && !name.startsWith('.')) names.push(name);
+      for (const n of names) { await moveFile(src, n, dir); restored++; }
+    }
+  }
+  await tryRemove(wowDir, WOW.marker); await tryRemove(wowDir, WOW.legacyMarker);
+  await cleanDotFiles();
+  return 'Normal mode. Restored your settings' + (restored ? ` and ${restored} file${restored === 1 ? '' : 's'}.` : '.') + note;
+}
+if (!window.showDirectoryPicker) { $('wowNoFs').hidden = false; $('wowFs').hidden = true; }
+else {
+  $('wowPick').addEventListener('click', async () => {
+    try {
+      let dir = null;
+      try { dir = await idb('readonly', st => st.get('wowDir')); } catch (e) {}
+      if (dir && (await dir.requestPermission({ mode: 'readwrite' })) === 'granted' && !wowDir && await findSettings(dir)) { await useWowDir(dir, true); return; }
+      dir = await window.showDirectoryPicker({ id: 'wow', mode: 'readwrite' });
+      await useWowDir(dir, true);
+    } catch (e) { if (e.name !== 'AbortError') wowRefresh('Couldn’t open that folder: ' + e.message); }
+  });
+  $('wowMode').addEventListener('click', async (e) => {
+    const b = e.target.closest('button'); if (!b || !wowDir) return;
+    const want = b.dataset.v, mode = await wowMode();
+    if ((want === 'normal') === (mode === 'normal')) return wowRefresh();
+    $('wowState').textContent = 'Switching… don’t unplug the WOW.';
+    try { wowRefresh((want === 'normal' ? await toNormal() : await toLiveSkratch(S.wowPark)) + ' Now eject the WOW and restart it.'); }
+    catch (err) { wowRefresh('Switch failed: ' + err.message); }
+  });
+  const parkUI = () => { $('wowPark').textContent = S.wowPark ? 'on' : 'off'; $('wowPark').classList.toggle('on', S.wowPark); };
+  $('wowPark').addEventListener('click', () => { S.wowPark = !S.wowPark; save('wowPark'); parkUI(); });
+  parkUI(); wowRefresh();
+  idb('readonly', st => st.get('wowDir')).then(d => d && useWowDir(d, false)).catch(() => {});
 }
 
 // ---------- boot ----------
