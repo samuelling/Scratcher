@@ -183,8 +183,8 @@ struct WalkthroughView: View {
 
     private let pages: [WalkthroughPage] = [
         WalkthroughPage(icon: "opticaldisc", title: "Scratch anything, live", steps: [
-            "Your WOW plays a control tone instead of music.",
-            "LiveSkratch reads the platter's every move from that tone and scratches whatever audio is coming in right now: a synth, a mic, a drum machine.",
+            "Your deck plays a control signal instead of music: the LiveSkratch tone on a WOW, or Serato / Traktor timecode.",
+            "LiveSkratch reads the platter's every move from it and scratches whatever audio is coming in right now: a synth, a mic, a drum machine.",
             "No gear yet? Try the built-in loop with the on-screen platter.",
         ]),
         WalkthroughPage(icon: "externaldrive.fill", title: "1 · Put the WOW in LiveSkratch mode", steps: [
@@ -192,6 +192,7 @@ struct WalkthroughView: View {
             "Setup tab → WOW setup → Choose the WOW drive. In Files: Browse → Locations → the WOW, then Open.",
             "Flip the switch to LiveSkratch.",
             "Eject the WOW in Files and restart it. Switch back to Normal the same way whenever you like: your beats and samples come back exactly as they were.",
+            "Using timecode instead? Skip this step.",
         ]),
         WalkthroughPage(icon: "cable.connector", title: "2 · Plug in", steps: [
             "Connect your audio interface.",
