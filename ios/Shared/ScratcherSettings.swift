@@ -26,6 +26,7 @@ struct ScratcherSettings: Codable, Equatable {
     var balance = 1.0            // stereo timecode: right-channel gain from calibration
     // calibration
     var flip = false
+    var tcSerato = true          // saved after timecode switched to Serato's phase (see decodeLenient)
     var calibrated = false
     var calib = 1.0
     var refLevel = 0.3
@@ -83,6 +84,9 @@ extension ScratcherSettings {
               let defData = try? JSONEncoder().encode(ScratcherSettings()),
               var base = (try? JSONSerialization.jsonObject(with: defData)) as? [String: Any] else { return nil }
         base.merge(saved) { _, new in new }
+        if saved["tcSerato"] == nil, (saved["controlSignal"] as? String) == "timecode" {   // timecode now follows Serato's phase:
+            base["flip"] = false; base["calibrated"] = false                                    // a direction saved before that no longer applies
+        }
         guard let merged = try? JSONSerialization.data(withJSONObject: base) else { return nil }
         return try? JSONDecoder().decode(ScratcherSettings.self, from: merged)
     }

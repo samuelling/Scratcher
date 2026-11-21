@@ -65,7 +65,7 @@ func runQuad(_ vf: (Double) -> Double, _ dur: Double, carrier: Double) -> (Doubl
         th += 2 * .pi * carrier * v / SR
         let cc = (th / (2 * .pi)).rounded(.down)
         if cc != cyc { cyc = cc; amp = 1 + 0.2 * (noise() > 0 ? 1 : -1) }
-        _ = d.process(0.3 * amp * cos(th) + noise() * 4e-3, 0.3 * amp * 0.85 * sin(th + 0.17) + noise() * 4e-3)
+        _ = d.process(0.3 * amp * sin(th) + noise() * 4e-3, 0.3 * amp * 0.85 * cos(th + 0.17) + noise() * 4e-3)   // Serato phase
         truth += v
         if n == warm { p0 = d.posInt; t0 = truth }
         if n > warm {

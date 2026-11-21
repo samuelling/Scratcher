@@ -172,7 +172,7 @@ final class ScratcherModel: ObservableObject {
         }
         s.refLevel = c.env
         if c.dir < 0 { s.flip = true }
-        if s.wowRead == .pilot {
+        if s.wowRead == .pilot && s.controlSignal != .timecode {   // only a WOW carries the pilot
             guard c.pilotHz > 12000, c.pilotHz < 23000, c.pilotAmp > 0.003 else {
                 calMessage = "Control tone OK, but no pilot above 12 kHz: is the pilot beat playing and the WOW fader open?"; calOK = false; return
             }
@@ -187,7 +187,7 @@ final class ScratcherModel: ObservableObject {
             ? String(format: "Timecode carrier %.1f Hz · level %.1f dBFS", s.carrierHz, 20 * log10(max(1e-6, s.refLevel)))
             : String(format: "1× = %.4f of nominal · level %.1f dBFS", s.calib, 20 * log10(max(1e-6, s.refLevel)))
         if s.flip { t += " · flipped" }
-        if s.wowRead == .pilot { t += String(format: " · pilot %.2f kHz", s.pilotHz / 1000) }
+        if s.wowRead == .pilot && s.controlSignal != .timecode { t += String(format: " · pilot %.2f kHz", s.pilotHz / 1000) }
         return t
     }
 

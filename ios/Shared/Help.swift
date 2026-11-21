@@ -89,7 +89,7 @@ enum HelpText {
             return [
                 HelpSection("WOW fader", [
                     HelpItem(icon: "dial.medium", title: "Fader",
-                             text: "Which faders control the sound: the WOW's own fader, the on-screen one, both, or neither."),
+                             text: "Which faders control the sound: the WOW's own fader, the on-screen one, both, or neither. With timecode there is no WOW fader, so only the on-screen one cuts."),
                     HelpItem(icon: "dot.radiowaves.right", title: "Read WOW fader by",
                              text: "Pilot tone (recommended): the WOW's fader cuts a high pilot beat, so the platter keeps being tracked through every cut. Tone level is for a WOW set up without the pilot."),
                     HelpItem(icon: "line.diagonal", title: "Cut point, Fully open",

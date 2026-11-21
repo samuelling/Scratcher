@@ -117,8 +117,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
         if (stereo) {
           sim.q = (sim.q || 0) + 2 * Math.PI * q.carrierHz * sim.v / sr;
           if (Math.abs(sim.q) > 1e6) sim.q %= 2 * Math.PI;
-          c = lvl * Math.cos(sim.q) + pil + this.rnd() * 2e-4;
-          c2 = lvl * Math.sin(sim.q) + pil + this.rnd() * 2e-4;
+          c = lvl * Math.sin(sim.q) + pil + this.rnd() * 2e-4;    // Serato phase: right leads left
+          c2 = lvl * Math.cos(sim.q) + pil + this.rnd() * 2e-4;
         } else {
           sim.theta += 2 * Math.PI * F0 * sim.v / sr;
           const span = 2 * Math.PI * AM_CYCLES; // wrap on whole loudness periods
@@ -135,7 +135,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
 
       let g = 1;
       const fm = this.faderMode;
-      if (fm === 'wow' || fm === 'both') {
+      if ((fm === 'wow' || fm === 'both') && !stereo) {   // timecode decks carry no WOW fader (no pilot): only the on-screen fader cuts
         const lvl = usePilot ? this.pilot.amp / Math.max(1e-4, this.pilotRef) : cEnv / Math.max(1e-4, this.refLevel);
         g = faderCurve(lvl, this.faderLo, this.faderHi);
       }

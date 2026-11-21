@@ -594,7 +594,9 @@ struct FaderSection: View {
         } header: {
             Text("WOW fader")
         } footer: {
-            Text("Pilot tone is the reliable mode: the fader cuts the 18 kHz pilot beat, so the platter is tracked through every cut.")
+            Text(model.settings.controlSignal == .timecode
+                 ? "Timecode mode: a timecode deck has no WOW fader, so only the on-screen fader cuts the sound. These settings apply to the WOW tone."
+                 : "Pilot tone is the reliable mode: the fader cuts the 18 kHz pilot beat, so the platter is tracked through every cut.")
         }
     }
 }

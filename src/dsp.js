@@ -325,7 +325,7 @@ class QuadDecoder {
       return 0;
     }
     if (mag < 0.5 * this.gate) { this.ring[this.n & M] = this.phi; this.n++; this.posInt += this.v; return this.v; }
-    const p = Math.atan2(b, a);
+    const p = Math.atan2(a, b);   // Serato / Traktor convention: forward = right channel leads left by a quarter cycle
     if (this.havePrev) {
       let d = p - this.prevPhase;
       if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;

@@ -160,8 +160,8 @@ public final class Processor {
                 if stereo {
                     simQ += 2 * .pi * quad.carrierHz * simV / sr
                     if abs(simQ) > 1e6 { simQ = simQ.truncatingRemainder(dividingBy: 2 * .pi) }
-                    c = lvl * cos(simQ) + pil + rnd() * 2e-4
-                    c2 = lvl * sin(simQ) + pil + rnd() * 2e-4
+                    c = lvl * sin(simQ) + pil + rnd() * 2e-4    // Serato phase: right leads left
+                    c2 = lvl * cos(simQ) + pil + rnd() * 2e-4
                 } else {
                     simTheta += 2 * .pi * Tone.f0 * simV / sr
                     if simTheta > 1e6 { simTheta -= span * (simTheta / span).rounded(.down) }
@@ -180,7 +180,7 @@ public final class Processor {
             let cEnv = stereo ? quad.env : dec.env
 
             var g = 1.0
-            if faderMode == .wow || faderMode == .both {
+            if (faderMode == .wow || faderMode == .both) && !stereo {   // timecode decks carry no WOW fader (no pilot): only the on-screen fader cuts
                 let lvl = usePilot ? pilot.amp / max(1e-4, pilotRef) : cEnv / max(1e-4, refLevel)
                 g = faderCurve(lvl, faderLo, faderHi)
             }

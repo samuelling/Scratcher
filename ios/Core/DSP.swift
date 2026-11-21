@@ -397,7 +397,7 @@ public final class QuadDecoder {
             ring[n & M] = phi; n += 1; posInt += v
             return v
         }
-        let p = atan2(b, a)
+        let p = atan2(a, b)   // Serato / Traktor convention: forward = right channel leads left by a quarter cycle
         if havePrev {
             var d = p - prevPhase
             if d > .pi { d -= 2 * .pi } else if d < -.pi { d += 2 * .pi }
@@ -421,7 +421,8 @@ public final class QuadDecoder {
     }
 }
 
-/// The LiveSkratch stereo timecode: a plain quadrature sine pair (left = cos, right = sin).
+/// The LiveSkratch stereo timecode: a plain quadrature sine pair in the Serato / Traktor phase (left = sin, right = cos),
+/// so forward play turns the same way as Serato or Traktor control vinyl.
 public enum StereoTimecode {
     public static let hz: Double = 1000
 }

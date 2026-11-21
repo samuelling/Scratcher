@@ -383,6 +383,10 @@ const S = {
   S.ctrlA = store.get('ctrlA', oc === 'R' ? 1 : 0); S.ctrlB = store.get('ctrlB', 1);
   S.liveL = store.get('liveL', ol === 'R' ? 1 : 0); S.liveR = store.get('liveR', ol === 'L' ? 0 : 1);
 }
+if (!store.get('tcSerato', false)) {   // timecode now follows Serato's phase: a direction saved before that no longer applies
+  if (S.control === 'timecode') { S.flip = false; S.calInfo = null; store.set('flip', false); store.set('calInfo', null); }
+  store.set('tcSerato', true);
+}
 const save = (k) => store.set(k, S[k]);
 
 let ctx, node, ctrlBus, liveMerger, master, outNodes = [];
@@ -611,7 +615,7 @@ function onMsg(m) {
       S.carrierHz *= m.speed; S.balance = Math.min(4, Math.max(0.25, m.balance)); save('carrierHz'); save('balance');
     } else S.calib = m.speed;
     S.refLevel = m.env;
-    if (S.wowRead === 'pilot') {
+    if (S.wowRead === 'pilot' && S.control !== 'timecode') {   // only a WOW carries the pilot
       if (m.pilot.hz < 12000 || m.pilot.hz > 23000 || m.pilot.amp < 0.003) {
         el.textContent = 'Control tone OK, but no pilot tone found above 12 kHz — is the pilot WAV playing on the beat deck and the fader open?'; el.className = 'calres bad'; return;
       }
@@ -627,7 +631,7 @@ function showCal() {
   const el = $('calRes'), c = S.calInfo;
   if (!c) { el.textContent = 'not calibrated — using nominal 1×'; el.className = 'calres'; return; }
   const db = 20 * Math.log10(Math.max(1e-6, c.level));
-  el.textContent = (S.control === 'timecode' ? `timecode carrier ${S.carrierHz.toFixed(1)} Hz` : `1× = ${c.speed.toFixed(4)} of nominal`) + ` · level ${db.toFixed(1)} dBFS${S.flip ? ' · flipped' : ''}${S.wowRead === 'pilot' ? ` · pilot ${(S.pilotHz / 1000).toFixed(2)} kHz` : ''}`;
+  el.textContent = (S.control === 'timecode' ? `timecode carrier ${S.carrierHz.toFixed(1)} Hz` : `1× = ${c.speed.toFixed(4)} of nominal`) + ` · level ${db.toFixed(1)} dBFS${S.flip ? ' · flipped' : ''}${S.wowRead === 'pilot' && S.control !== 'timecode' ? ` · pilot ${(S.pilotHz / 1000).toFixed(2)} kHz` : ''}`;
   el.className = 'calres good';
 }
 
@@ -801,7 +805,7 @@ function controlUI() {
 }
 seg('control', 'control', () => {   // a different signal: the old calibration no longer applies
   S.calInfo = null; S.flip = false; S.calib = 1; S.balance = 1; ['calInfo', 'flip', 'calib', 'balance'].forEach(save);
-  controlUI(); syncButtons(); showCal(); if (node) { sendAllParams(); applyRouting(); }
+  controlUI(); syncButtons(); showCal(); wowReadNote(); if (node) { sendAllParams(); applyRouting(); }
 });
 seg('tcType', 'tcType', () => { S.carrierHz = parseFloat(S.tcType); S.calInfo = null; save('carrierHz'); save('calInfo'); showCal(); param({ carrierHz: S.carrierHz }); });
 controlUI();
@@ -826,7 +830,9 @@ seg('faderStyle', 'faderStyle', () => { param({ padStyle: S.faderStyle === 'pad'
 seg('padMode', 'padMode', () => { param({ padOpen: padResting() }); padUI(); });
 padUI();
 seg('mode', 'mode', () => param({ mode: S.mode }));
-const wowReadNote = () => { $('wowReadNote').innerHTML = S.wowRead === 'pilot'
+const wowReadNote = () => { $('wowReadNote').innerHTML = S.control === 'timecode'
+  ? '<b>Timecode mode:</b> a timecode deck has no WOW fader, so only the on-screen fader cuts the sound. These settings apply to the WOW tone.'
+  : S.wowRead === 'pilot'
   ? 'WOW <code>wow_settings.txt</code>: <b>fader_left = beat</b>, <b>fader_right = beat</b>. Pilot WAV in the <b>beats</b> folder, control tone in <b>samples</b>, mix knob centered. The platter stays tracked through every cut.'
   : 'Fader cuts the control tone itself. Simple, but LiveSkratch can’t see the platter while the fader is closed.'; };
 seg('wowRead', 'wowRead', () => { param({ wowRead: S.wowRead }); wowReadNote(); });
@@ -929,8 +935,8 @@ $('toneBtn').addEventListener('click', () => {
   wavDownload('00-liveskratch-control.wav', sr, 1, sr * secs, controlSample);
 });
 $('tcBtn').addEventListener('click', () => {
-  const sr = 44100;   // 10 s = 10 000 whole 1 kHz cycles: loops seamlessly. Left = cos, right = sin.
-  wavDownload('00-liveskratch-timecode.wav', sr, 2, sr * 10, (i, c) => Math.round((c ? Math.sin : Math.cos)(2 * Math.PI * 1000 * i / sr) * 0.7 * 32767));
+  const sr = 44100;   // 10 s = 10 000 whole 1 kHz cycles: loops seamlessly. Serato phase: left = sin, right = cos (right leads).
+  wavDownload('00-liveskratch-timecode.wav', sr, 2, sr * 10, (i, c) => Math.round((c ? Math.cos : Math.sin)(2 * Math.PI * 1000 * i / sr) * 0.7 * 32767));
 });
 $('pilotBtn').addEventListener('click', () => {
   const sr = 44100;
@@ -1047,7 +1053,7 @@ const HELP = {
       ['═', 'Slider: Cut-in, Curve, Hamster', 'Cut-in is how far you move before sound starts; Curve is how quickly it reaches full volume; Hamster flips the direction.'],
     ]],
     ['WOW fader', [
-      ['◐', 'Fader', 'Which faders control the sound: the WOW’s own, the on-screen one, both, or neither.'],
+      ['◐', 'Fader', 'Which faders control the sound: the WOW’s own, the on-screen one, both, or neither. With timecode there is no WOW fader, so only the on-screen one cuts.'],
       ['≈', 'Read it by', 'Pilot tone (recommended): the WOW’s fader cuts a high pilot beat, so the platter keeps being tracked through every cut. Tone level is for a WOW set up without the pilot.'],
       ['╱', 'Cut point, Fully open', 'Where along the WOW fader’s travel the sound starts and reaches full volume.'],
       ['▁', 'Tone gate', 'Below this level the platter counts as stopped. Raise it if a stopped record slowly drifts.'],
