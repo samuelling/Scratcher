@@ -58,6 +58,11 @@ public final class Processor {
     // ---- requests (UI increments, audio thread handles) ----
     public var jumpRequests = 0; var jumpHandled = 0
     public var freezeTarget = false; var freezeApplied = false
+    /// Tape length asked for (seconds): applied on the audio thread, which starts a fresh tape.
+    public var tapeTarget: Double; var tapeApplied: Double
+    public let maxTape: Double
+    /// Samples per tape-overview bin: the overview always spans the whole tape.
+    public private(set) var binSize = 256
     public var calibrateRequests = 0; var calibrateHandled = 0
     public var recordRequests = 0; var recordHandled = 0
 
@@ -85,16 +90,19 @@ public final class Processor {
     var binAcc: Float = 0, binN = 0
     var ctrlPk = 0.0, livePk = 0.0, outPk = 0.0
 
-    public init(sr: Double) {
+    public init(sr: Double, tapeSeconds: Double = 45, maxTape: Double = 300) {
         self.sr = sr
+        self.maxTape = maxTape
+        tapeTarget = min(tapeSeconds, maxTape); tapeApplied = tapeTarget
         dec = ToneDecoder(sr: sr)
         quad = QuadDecoder(sr: sr)
         pilot = PilotReader(sr: sr)
         pilotR = PilotReader(sr: sr)
-        eng = ScratchEngine(sr: sr)
+        eng = ScratchEngine(sr: sr, seconds: min(tapeSeconds, maxTape), maxSeconds: maxTape)
         calN = Int((1.5 * sr).rounded())
         calSpeeds = .allocate(capacity: calN / 32 + 8)
         bins = .allocate(capacity: binCount); bins.initialize(repeating: 0, count: binCount)
+        binSize = max(64, (eng.len + binCount - 1) / binCount)
     }
     deinit { calSpeeds.deallocate(); bins.deallocate(); recBuf?.deallocate(); retiredRec?.deallocate() }
 
@@ -128,6 +136,14 @@ public final class Processor {
                        outL: UnsafeMutablePointer<Float>, outR: UnsafeMutablePointer<Float>) {
         // handle requests
         if jumpHandled != jumpRequests { jumpHandled = jumpRequests; eng.jumpToLive() }
+        if tapeApplied != tapeTarget {        // a new tape length: start a fresh, empty tape
+            tapeApplied = tapeTarget
+            eng.setTape(seconds: min(tapeTarget, maxTape))
+            freezeApplied = false; freezeTarget = false
+            binSize = max(64, (eng.len + binCount - 1) / binCount)
+            for i in 0..<binCount { bins[i] = 0 }
+            binHead = 0; binAcc = 0; binN = 0
+        }
         if freezeApplied != freezeTarget { freezeApplied = freezeTarget; eng.setFrozen(freezeTarget) }
         if calibrateHandled != calibrateRequests {
             calibrateHandled = calibrateRequests
@@ -211,7 +227,7 @@ public final class Processor {
             if !eng.frozen {
                 if Float(al) > binAcc { binAcc = Float(al) }
                 binN += 1
-                if binN >= 256 { bins[binHead] = binAcc; binHead = (binHead + 1) % binCount; binAcc = 0; binN = 0 }
+                if binN >= binSize { bins[binHead] = binAcc; binHead = (binHead + 1) % binCount; binAcc = 0; binN = 0 }
             }
 
             if calOn {
@@ -231,7 +247,7 @@ public final class Processor {
                                dir: stereo ? quad.dir : dec.dir, stat: stereo ? 0 : dec.lastStat,
                                pos: stereo ? quad.posInt : dec.posInt,
                                gain: eng.gain, ctrlPk: ctrlPk, livePk: livePk, outPk: outPk,
-                               simV: simV, loopLen: eng.loopLen, pilotAmp: pilot.amp)
+                               simV: simV, loopLen: eng.loopUsed, pilotAmp: pilot.amp)
     }
 
     /// The UI calls this after reading `state` to reset the peak meters.

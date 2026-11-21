@@ -34,17 +34,21 @@ enum HelpText {
                     HelpItem(icon: "gauge.with.dots.needle.33percent", title: "Speed, direction, behind live",
                              text: "Speed is in multiples of normal (1× = motor speed). Behind live is how far the needle sits behind the audio coming in right now."),
                     HelpItem(icon: "waveform", title: "Tape strip",
-                             text: "The last 11 seconds of incoming audio. The orange line is the needle; when frozen, the blue area is the loop you're scratching."),
+                             text: "Everything you can reach: the whole tape, oldest on the left, now on the right. The red line is the needle; in Loop, the dashed box is the stretch you're scratching."),
                     HelpItem(icon: "checkmark.circle", title: "Status badges",
                              text: "Tone: the WOW's control tone is coming in. 1×: the platter is at normal speed, so playback locks to live. Calibrated: the app has measured your WOW."),
                 ]),
                 HelpSection("Playing", [
                     HelpItem(icon: "hand.tap", title: "Fader pad",
                              text: "An on-screen cut switch, like a PT01's: touch it to chop the sound, in rhythm with your scratches. It works together with the WOW's own fader: sound plays only when both are open. In Feel you can make touching open the sound instead, or switch to a slider."),
-                    HelpItem(icon: "snowflake", title: "Freeze",
-                             text: "Stops taking in new audio, so the last few seconds become a fixed loop you can scratch over and over. Tap again to go back to live."),
-                    HelpItem(icon: "forward.end.fill", title: "Live",
-                             text: "Jumps the needle back to right now. After a scratch it also snaps back by itself once the platter is back at 1× (Feel tab)."),
+                    HelpItem(icon: "dot.radiowaves.right", title: "Live",
+                             text: "Live: after a scratch the needle jumps back to now once the platter is back at normal speed. For cutting up whatever is playing right now."),
+                    HelpItem(icon: "record.circle", title: "Record",
+                             text: "Record: like a normal record. The needle stays wherever you leave it and plays on from there, anywhere on the tape (45 s to 5 min back, set in Feel)."),
+                    HelpItem(icon: "repeat", title: "Loop",
+                             text: "Loop: the tape stops recording and holds still, so you can scratch the same stretch again and again, up to the whole tape. Tap Live or Record to carry on."),
+                    HelpItem(icon: "forward.end.fill", title: "Now",
+                             text: "Jumps the needle to right now, in any mode."),
                 ]),
             ]
         case .setup:
@@ -54,7 +58,7 @@ enum HelpText {
                     HelpItem(icon: "cable.connector", title: "Inputs",
                              text: "Make a stereo channel from two interface inputs: one carries the WOW, the other the audio you want to scratch. Insert LiveSkratch on it and choose which side the WOW is on."),
                     HelpItem(icon: "pianokeys", title: "MIDI",
-                             text: "Crossfader, Cut, Freeze, Jump to live, Output gain and Source are plugin parameters: map them to MIDI in your host."),
+                             text: "Crossfader, Cut, Loop (freeze), Jump to now, Output gain and Source are plugin parameters: map them to MIDI in your host."),
                 ]))
             } else {
                 sections.append(HelpSection("Audio routing", [
@@ -106,12 +110,14 @@ enum HelpText {
                 HelpSection("Feel", [
                     HelpItem(icon: "waveform.path", title: "Smoothing",
                              text: "Lower is tighter and more immediate; higher is smoother but slightly laggy."),
-                    HelpItem(icon: "arrow.uturn.forward", title: "After a scratch",
-                             text: "Snap back returns to live audio once the platter is back at normal speed (after the snap delay). Stay behind keeps playing from where you left the needle."),
+                    HelpItem(icon: "arrow.uturn.forward", title: "Live: snap back after",
+                             text: "In Live, how long the platter must be back at normal speed before the needle jumps to now."),
                     HelpItem(icon: "lock", title: "Lock to exactly 1×",
                              text: "When the platter runs at motor speed, play exactly in time with live audio so it never drifts."),
-                    HelpItem(icon: "snowflake", title: "Freeze loop",
-                             text: "How many seconds Freeze holds on to."),
+                    HelpItem(icon: "rectangle.dashed", title: "Memory",
+                             text: "How far back you can scratch: 45 s, 2 min or 5 min of what came in (the plugin goes up to 2 min). Changing it starts a fresh tape."),
+                    HelpItem(icon: "repeat", title: "Loop length, Loop ends",
+                             text: "How much Loop holds, up to the whole tape, and whether the needle wraps round at the ends or stops like a record's run-out groove."),
                 ]),
             ]
         }
@@ -207,7 +213,8 @@ struct WalkthroughView: View {
         ]),
         WalkthroughPage(icon: "hand.draw.fill", title: "4 · Scratch", steps: [
             "Scratch tab: move the record and the live audio moves with it.",
-            "The WOW's fader and the on-screen pad both cut the sound: tap the pad to chop. Freeze holds a loop; Live jumps back to now.",
+            "The WOW's fader and the on-screen pad both cut the sound: tap the pad to chop.",
+            "Live snaps back to now after a scratch; Record plays like a normal record from wherever you leave the needle; Loop holds the tape still. Now jumps to the present.",
             "Fine-tune the fader and feel in the Feel tab.",
             "Tap ? on any screen for help.",
         ]),

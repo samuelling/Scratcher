@@ -98,12 +98,12 @@ class ToneDecoder {
   }
 }
 
+// The tape: live audio is recorded round a ring of `len` samples (16-bit, so 5 minutes of stereo is ~58 MB).
+// The needle (play) can sit anywhere on what has been recorded, never ahead of now.
 class ScratchEngine {
-  constructor(sr, seconds = 32) {
+  constructor(sr, seconds = 45) {
     this.sr = sr;
-    let len = 1; while (len < sr * seconds) len <<= 1;
-    this.len = len; this.mask = len - 1;
-    this.L = new Float32Array(len); this.R = new Float32Array(len);
+    this.setTape(seconds);
     this.w = 0;                  // absolute write count
     this.play = 0;               // absolute play position
     this.minLag = Math.round(0.0025 * sr);
@@ -113,7 +113,9 @@ class ScratchEngine {
     this.lockEnabled = true;
     this.locked = false;
     this.steadyCount = 0;
-    this.mode = 'snap';          // 'snap' | 'stay'
+    this.mode = 'snap';          // 'snap' (Live: back to now after a scratch) | 'stay' (Record: the needle stays where you leave it)
+    this.loopWhole = false;      // Loop over everything recorded, not just loopLen
+    this.loopStop = false;       // Loop ends stop the needle (a run-out groove) instead of wrapping round
     this.snapDelay = Math.round(0.18 * sr);
     this.xfade = 0; this.xfadeLen = Math.round(0.025 * sr); this.xfadePos = 0;
     this.frozen = false; this.freezeW = 0; this.loopLen = Math.round(4 * sr);
@@ -125,9 +127,18 @@ class ScratchEngine {
 
   setSmooth(ms) { this.smoothMs = ms; }
 
+  // a fresh, empty tape of `seconds`
+  setTape(seconds) {
+    this.len = Math.max(Math.round(2 * this.sr), Math.round(seconds * this.sr));
+    this.L = new Int16Array(this.len); this.R = new Int16Array(this.len);
+    this.w = 0; this.play = 0; this.started = false; this.frozen = false; this.xfade = 0;
+    if (this.loopLen > this.len - 8) this.loopLen = this.len - 8;
+  }
+  ix(i) { const m = i % this.len; return m < 0 ? m + this.len : m; }
+
   readCh(buf, pos) {
-    const i = Math.floor(pos), f = pos - i, m = this.mask;
-    const y0 = buf[(i - 1) & m], y1 = buf[i & m], y2 = buf[(i + 1) & m], y3 = buf[(i + 2) & m];
+    const i = Math.floor(pos), f = pos - i, S = 1 / 32767;
+    const y0 = buf[this.ix(i - 1)] * S, y1 = buf[this.ix(i)] * S, y2 = buf[this.ix(i + 1)] * S, y3 = buf[this.ix(i + 2)] * S;
     const c1 = 0.5 * (y2 - y0);
     const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
     const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
@@ -138,6 +149,12 @@ class ScratchEngine {
     if (this.frozen) return;
     this.xfadePos = this.w - this.minLag;
     this.xfade = 1;
+  }
+
+  // the loop actually in use: what was asked for, but never more than has been recorded
+  get loopUsed() {
+    const avail = Math.min(this.frozen ? this.freezeW : this.w, this.len) - 8;
+    return Math.max(64, Math.min(this.loopWhole ? this.len - 8 : this.loopLen, avail));
   }
 
   setFrozen(on, loopSec) {
@@ -151,7 +168,8 @@ class ScratchEngine {
   // v = decoder rate, fader = target gain (0..1), returns [l, r]
   step(inL, inR, v, fader, out) {
     if (!this.frozen) {
-      this.L[this.w & this.mask] = inL; this.R[this.w & this.mask] = inR;
+      const j = this.w % this.len;
+      this.L[j] = Math.max(-1, Math.min(1, inL)) * 32767; this.R[j] = Math.max(-1, Math.min(1, inR)) * 32767;
       this.w++;
     }
     if (!this.started) { this.play = this.w - this.minLag; this.started = true; }
@@ -173,12 +191,13 @@ class ScratchEngine {
     this.play += rate;
     const top = (this.frozen ? this.freezeW : this.w);
     if (this.frozen) {
-      const lo = top - this.loopLen, hi = top - 2;
-      while (this.play >= hi) this.play -= this.loopLen;
-      while (this.play < lo) this.play += this.loopLen;
+      const L = this.loopUsed, lo = top - L, hi = top - 2;
+      if (this.loopStop) { if (this.play > hi) this.play = hi; if (this.play < lo) this.play = lo; }   // run-out: the needle stops at the ends
+      else { while (this.play >= hi) this.play -= L; while (this.play < lo) this.play += L; }
     } else {
-      if (this.play > top - this.minLag) this.play = top - this.minLag;
-      if (this.play < top - this.len + 4) this.play = top - this.len + 4;
+      const back = Math.min(this.w, this.len) - 4;           // only what has been recorded…
+      if (this.play < top - back) this.play = top - back;
+      if (this.play > top - this.minLag) this.play = top - this.minLag;   // …and never ahead of now (wins at start-up)
     }
 
     // snap back to live after a scratch, once the platter is steady again

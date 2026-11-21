@@ -37,7 +37,7 @@ public final class LiveSkratchAudioUnit: AUAudioUnit, ScratcherHost {
 
     public override init(componentDescription: AudioComponentDescription, options: AudioComponentInstantiationOptions = []) throws {
         settings = ScratcherSettings.load(key: LiveSkratchAudioUnit.settingsKey)
-        processor = Processor(sr: 48000)
+        processor = Processor(sr: 48000, maxTape: 120)
         try super.init(componentDescription: componentDescription, options: options)
         let fmt = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2)!
         inBus = try AUAudioUnitBus(format: fmt); inBus.maximumChannelCount = 2
@@ -79,7 +79,7 @@ public final class LiveSkratchAudioUnit: AUAudioUnit, ScratcherHost {
         try super.allocateRenderResources()
         let sr = outBus.format.sampleRate
         if abs(sr - processor.sr) > 1 {
-            processor = Processor(sr: sr)
+            processor = Processor(sr: sr, maxTape: 120)
             settings.apply(to: processor)
             loops.loadDefault(fileName: settings.loopFile, into: processor)
         }

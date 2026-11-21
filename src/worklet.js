@@ -12,7 +12,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
     this.wowRead = 'level'; // 'level' | 'pilot'
     this.pilotRef = 0.3;
     this.pilotGain = (f) => this.pilot.lnGain(f);
-    this.eng = new ScratchEngine(sr);
+    this.eng = new ScratchEngine(sr, 45);
+    this.binCount = 1900;   // tape overview bins: they always span the whole tape
     this.faderMode = 'wow';
     this.userGate = 0.0015; this.toneRef = 0;   // gate = max(user gate, 10% of calibrated tone level)
     this.refLevel = 0.3;
@@ -21,7 +22,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
     this.vf = { x: 0, cut: 0.05, width: 0.02, hamster: false };
     this.sim = { on: true, motor: true, hand: false, handV: 0, v: 0, theta: 0, fader: 1, seed: 1 };
     this.cal = null;
-    this.binSize = 256; this.binAcc = 0; this.binN = 0; this.newBins = [];
+    this.binSize = Math.max(64, Math.ceil(this.eng.len / this.binCount)); this.binAcc = 0; this.binN = 0; this.newBins = []; this.tapeId = 0;
     this.reportEvery = Math.round(sr / 60); this.since = 0;
     this.ctrlPk = 0; this.livePk = 0; this.outPk = 0;
     this.tmp = [0, 0];
@@ -59,7 +60,13 @@ class FlutterProcessor extends AudioWorkletProcessor {
         if ('pilotRef' in m) this.pilotRef = m.pilotRef;
         if ('outGain' in m) e.outGain = m.outGain;
         if ('sim' in m) this.sim.on = m.sim;
+        if ('tapeSec' in m && Math.round(m.tapeSec * sampleRate) !== e.len) {   // a new tape length: a fresh, empty tape
+          e.setTape(m.tapeSec);
+          this.binSize = Math.max(64, Math.ceil(e.len / this.binCount)); this.binAcc = 0; this.binN = 0; this.newBins.length = 0; this.tapeId++;
+        }
         if ('loopSec' in m) e.loopLen = Math.min(Math.round(m.loopSec * sampleRate), e.len - 8);
+        if ('loopWhole' in m) e.loopWhole = m.loopWhole;
+        if ('loopStop' in m) e.loopStop = m.loopStop;
         break;
       case 'freeze': e.setFrozen(m.on, m.loopSec); break;
       case 'jump': e.jumpToLive(); break;
@@ -192,7 +199,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
         env: stereo ? q.env : d.env, active: stereo ? q.active : d.active, dir: stereo ? q.dir : d.dir,
         stat: stereo ? 0 : d.lastStat, pos: stereo ? q.posInt : d.posInt,
         gain: e.gain, ctrlPk: this.ctrlPk, livePk: this.livePk, outPk: this.outPk,
-        simV: sim.v, loopLen: e.loopLen, bins, pilotAmp: this.pilot.amp,
+        simV: sim.v, loopLen: e.loopUsed, bins, pilotAmp: this.pilot.amp, binSize: this.binSize, tapeLen: e.len, tapeId: this.tapeId,
       }, bins ? [bins.buffer] : []);
       this.ctrlPk = 0; this.livePk = 0; this.outPk = 0;
     }

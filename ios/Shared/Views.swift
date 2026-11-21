@@ -148,13 +148,18 @@ struct PlayView: View {
 }
 
 struct Readouts: View {
+    static func behind(_ sec: Double) -> String {
+        sec < 1 ? String(format: "%.0f ms", sec * 1000)
+            : sec < 60 ? String(format: "%.2f s", sec)
+            : String(format: "%d:%02d min", Int(sec) / 60, Int(sec) % 60)
+    }
     let state: ProcessorState
     let sampleRate: Double
     var body: some View {
         HStack(spacing: 8) {
             cell("Speed", String(format: "%+.2f×", state.v), Theme.blue)
             cell("Direction", !state.active ? "—" : (state.dir > 0 ? "FWD" : "BACK"), state.dir > 0 ? Theme.green : Theme.red)
-            cell("Behind live", String(format: "%.0f ms", state.lag / sampleRate * 1000), Theme.ink)
+            cell("Behind live", Readouts.behind(state.lag / sampleRate), Theme.ink)
         }
     }
     private func cell(_ label: String, _ value: String, _ color: Color) -> some View {
@@ -261,11 +266,42 @@ struct Transport: View {
             if model.settings.faderStyle == .slider {
                 HoldButton(title: "Cut", icon: "scissors") { model.setCut($0) }
             }
-            TransportButton(title: live.state.frozen ? "Frozen" : "Freeze", icon: "snowflake",
-                            lit: live.state.frozen, color: Theme.amber) { model.toggleFreeze() }
-            TransportButton(title: "Live", icon: "forward.end", lit: false, color: Theme.blue) { model.jumpToLive() }
+            PlayModeBar(model: model).layoutPriority(1)
+            TransportButton(title: "Now", icon: "forward.end", lit: false, color: Theme.blue) { model.jumpToLive() }
+                .frame(maxWidth: 76)
         }
         .frame(height: 54)
+    }
+}
+
+/// Live · Record · Loop: what the needle does when you let go.
+struct PlayModeBar: View {
+    @ObservedObject var model: ScratcherModel
+    @ObservedObject private var live: LiveState
+    init(model: ScratcherModel) { _model = ObservedObject(wrappedValue: model); _live = ObservedObject(wrappedValue: model.live) }
+    var body: some View {
+        let frozen = live.state.frozen, snap = model.settings.returnMode == .snap
+        HStack(spacing: 0) {
+            seg("Live", "dot.radiowaves.right", !frozen && snap, Theme.green) { model.setPlayMode(.live) }
+            Rectangle().fill(Theme.ink).frame(width: Theme.stroke)
+            seg("Record", "record.circle", !frozen && !snap, Theme.red) { model.setPlayMode(.record) }
+            Rectangle().fill(Theme.ink).frame(width: Theme.stroke)
+            seg("Loop", "repeat", frozen, Theme.amber) { model.setPlayMode(.loop) }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.ink, lineWidth: Theme.stroke))
+    }
+    private func seg(_ t: String, _ icon: String, _ on: Bool, _ c: Color, _ a: @escaping () -> Void) -> some View {
+        Button(action: a) {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 16))
+                Text(t.uppercased()).font(Theme.wide(12, .semibold)).kerning(1.2).lineLimit(1).minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(on ? Color.black : Theme.ink)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(on ? c : Color.clear)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -452,12 +488,13 @@ struct TapeView: View {
                 }
                 ctx.stroke(p, with: .color(s.frozen ? Theme.amber : Theme.ink), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
             }
+            let bs = Double(model.host?.processor.binSize ?? 256)
             if s.frozen {
-                let lw = CGFloat(Double(s.loopLen) / 256) * w
+                let lw = CGFloat(Double(s.loopLen) / bs) * w
                 ctx.stroke(Path(roundedRect: CGRect(x: sz.width - lw + 2, y: 3, width: lw - 4, height: sz.height - 6), cornerRadius: 4),
                            with: .color(Theme.amber), style: StrokeStyle(lineWidth: Theme.stroke, dash: [3, 5]))
             }
-            let x = sz.width - CGFloat(s.lag / 256) * w
+            let x = sz.width - CGFloat(s.lag / bs) * w
             ctx.fill(Path(CGRect(x: x - 1, y: 0, width: 2, height: sz.height)), with: .color(Theme.red))
         }
     }
@@ -633,14 +670,29 @@ struct FeelSection: View {
     var body: some View {
         Section("Feel") {
             SliderRow(label: "Smoothing", value: model.binding(\.smoothMs), range: 0.3...12) { String(format: "%.1f ms", $0) }
-            Picker("After a scratch", selection: model.binding(\.returnMode)) {
-                Text("Snap back").tag(ReturnMode.snap); Text("Stay behind").tag(ReturnMode.stay)
-            }
-            if model.settings.returnMode == .snap {
-                SliderRow(label: "Snap delay", value: model.binding(\.snapDelayMs), range: 0...1000) { String(format: "%.0f ms", $0) }
-            }
+            SliderRow(label: "Live: snap back after", value: model.binding(\.snapDelayMs), range: 0...1000) { String(format: "%.0f ms", $0) }
             Toggle("Lock to exactly 1×", isOn: model.binding(\.lock))
-            SliderRow(label: "Freeze loop", value: model.binding(\.loopSec), range: 0.25...16) { String(format: "%.2f s", $0) }
+        }
+        Section {
+            let plugin = model.host?.isPlugin ?? false
+            Picker("Memory", selection: model.binding(\.tapeSec)) {
+                Text("45 s").tag(45.0); Text("2 min").tag(120.0)
+                if !plugin { Text("5 min").tag(300.0) }
+            }
+            .pickerStyle(.segmented)
+            let tape = min(model.settings.tapeSec, plugin ? 120 : 300)
+            SliderRow(label: "Loop length", value: model.binding(\.loopSec), range: 0.25...tape) {
+                $0 >= tape - 0.01 ? "whole tape" : ($0 < 60 ? String(format: "%.1f s", $0) : String(format: "%d:%02d", Int($0) / 60, Int($0) % 60))
+            }
+            Picker("Loop ends", selection: model.binding(\.loopStop)) {
+                Text("Wrap round").tag(false); Text("Stop (run-out)").tag(true)
+            }
+        } header: {
+            Text("Tape")
+        } footer: {
+            Text("LiveSkratch records what comes in so you can scratch it. Memory is how far back you can go; changing it starts a fresh tape. Loop holds the last stretch (up to the whole tape) still, like a record.")
+        }
+        Section {
             SliderRow(label: "Output gain", value: model.binding(\.outGain), range: 0...2) { String(format: "%.0f%%", $0 * 100) }
         }
     }

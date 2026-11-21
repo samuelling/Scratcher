@@ -29,6 +29,16 @@ A 1500 Hz sine whose **loudness** follows a lopsided triangle (in log amplitude)
 
 `test/test_wow.js` checks the decoder against both true reverse and WOW-style reverse.
 
+## Live, Record, Loop
+
+LiveSkratch records what comes in onto a tape and your platter moves a needle along it. The needle can go anywhere that has been recorded, but never ahead of now.
+
+- **Live**: after a scratch the needle jumps back to now once the platter is back at normal speed.
+- **Record**: a normal record. The needle stays wherever you leave it and plays on from there.
+- **Loop**: the tape stops recording and holds still (up to the whole tape), wrapping round at the ends or stopping like a run-out groove.
+
+**Memory** sets how far back you can go: 45 s, 2 min or 5 min (the AUv3 goes up to 2 min). The tape is stored as 16-bit audio, so 5 minutes of stereo is about 58 MB.
+
 ## Setup
 
 1. WOW out → interface input. Live source → another input.

@@ -165,5 +165,38 @@ do {
     check(p.state.gain > 0.99, "pad open plays")
 }
 
+print("== tape: Record mode, memory length, Loop over the whole tape")
+do {
+    let sr = 48000.0
+    func run(_ e: ScratchEngine, _ secs: Double, _ v: Double) { for _ in 0..<Int(secs * sr) { _ = e.step(0.1, 0.1, v, 1) } }
+    // Record: after pulling back, the needle stays where it was left (Live would snap back to now)
+    let e = ScratchEngine(sr: sr, seconds: 45); e.mode = .stay
+    run(e, 3, 1); run(e, 2, -1); run(e, 3, 1)
+    print(String(format: "  record: pulled back, released: lag %.2f s (stays)", e.lag / sr))
+    check(abs(e.lag / sr - 4) < 0.1, "Record mode keeps the needle ~4 s behind")
+    let s2 = ScratchEngine(sr: sr, seconds: 45); s2.mode = .snap
+    run(s2, 3, 1); run(s2, 2, -1); run(s2, 3, 1)
+    check(s2.lag / sr < 0.01, "Live mode snaps back to now")
+    // memory: you can only go back as far as the tape
+    run(e, 60, 1); run(e, 30, -3)
+    print(String(format: "  45 s tape, pulled back 2 min: lag %.1f s", e.lag / sr))
+    check(e.lag / sr < 45.01 && e.lag / sr > 44.5, "45 s tape stops the needle at 45 s back")
+    e.setTape(seconds: 300)
+    run(e, 200, 1); run(e, 40, -3)
+    print(String(format: "  5 min tape after 200 s, pulled back 160 s: lag %.1f s", e.lag / sr))
+    check(abs(e.lag / sr - 160) < 1, "5 min tape reaches 160 s back")
+    // Loop over the whole tape, stopping at the ends like a run-out groove
+    let f = ScratchEngine(sr: sr, seconds: 45); f.mode = .stay; f.loopWhole = true; f.loopStop = true
+    run(f, 10, 1); f.setFrozen(true)
+    run(f, 3, 2)
+    check(f.lag < 10, "Loop/stop: pushing forward holds the needle at the end")
+    run(f, 10, -3)
+    print(String(format: "  loop whole tape (10 s recorded), stop ends: back end at %.2f s", f.lag / sr))
+    check(abs(f.lag / sr - 10) < 0.01, "Loop/stop: pulling back holds at the start of what was recorded")
+    let g = ScratchEngine(sr: sr, seconds: 45); g.loopWhole = true
+    run(g, 10, 1); g.setFrozen(true); run(g, 25, -1)
+    check(g.lag >= 0 && g.lag / sr <= 10, "Loop/wrap: the needle wraps round the whole tape")
+}
+
 print(failures == 0 ? "\nALL PASS" : "\n\(failures) FAILURE(S)")
 exit(failures == 0 ? 0 : 1)

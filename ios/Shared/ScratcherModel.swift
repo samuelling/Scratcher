@@ -127,6 +127,17 @@ final class ScratcherModel: ObservableObject {
     // MARK: actions
     func jumpToLive() { host?.processor.jumpRequests += 1 }
     func toggleFreeze() { guard let p = host?.processor else { return }; p.freezeTarget.toggle() }
+    /// Live: back to now after a scratch. Record: a normal record, the needle stays where you leave it. Loop: hold what's recorded.
+    enum PlayMode { case live, record, loop }
+    func setPlayMode(_ m: PlayMode) {
+        guard let p = host?.processor else { return }
+        switch m {
+        case .loop: p.freezeTarget = true
+        case .live, .record:
+            var s = settings; s.returnMode = m == .live ? .snap : .stay; settings = s
+            p.freezeTarget = false
+        }
+    }
     func setCut(_ on: Bool) { host?.processor.softCut = on }
     /// Tap pad: finger down or up.
     func setPad(down: Bool) {

@@ -9,7 +9,9 @@ struct ScratcherSettings: Codable, Equatable {
     var returnMode: ReturnMode = .snap
     var snapDelayMs = 180.0
     var lock = true
-    var loopSec = 4.0
+    var loopSec = 4.0            // Loop length; at the tape length it means the whole tape
+    var tapeSec = 45.0           // how much live audio is kept to scratch: 45, 120 or 300 s (plugin: up to 120)
+    var loopStop = false         // Loop ends: stop like a run-out groove (false: wrap round)
     var outGain = 1.0
     // fader
     var faderMode: FaderMode = .both
@@ -53,7 +55,10 @@ struct ScratcherSettings: Codable, Equatable {
         p.eng.mode = returnMode
         p.eng.snapDelay = Int(snapDelayMs * 0.001 * p.sr)
         p.eng.lockEnabled = lock
-        p.eng.setLoopSeconds(loopSec)
+        p.tapeTarget = min(tapeSec, p.maxTape)
+        p.eng.setLoopSeconds(min(loopSec, tapeSec))
+        p.eng.loopWhole = loopSec >= min(tapeSec, p.maxTape) - 0.01
+        p.eng.loopStop = loopStop
         p.eng.outGain = outGain
         p.faderMode = faderMode
         p.wowRead = wowRead

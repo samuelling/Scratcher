@@ -228,10 +228,13 @@ public final class ToneDecoder {
 
 public enum ReturnMode: String, CaseIterable, Codable { case snap, stay }
 
+/// The tape: live audio is recorded round a ring of `len` samples (16-bit, so 5 minutes of stereo is ~58 MB).
+/// The needle (play) can sit anywhere on what has been recorded, never ahead of now.
 public final class ScratchEngine {
     public let sr: Double
-    let len: Int, mask: Int
-    let Lb: UnsafeMutablePointer<Float>, Rb: UnsafeMutablePointer<Float>
+    let cap: Int                                     // samples reserved: the longest tape
+    public private(set) var len: Int                 // samples in use: the tape
+    let Lb: UnsafeMutablePointer<Int16>, Rb: UnsafeMutablePointer<Int16>
     public private(set) var w = 0                 // absolute write count
     public private(set) var play = 0.0            // absolute play position
     let minLag: Double
@@ -241,7 +244,9 @@ public final class ScratchEngine {
     public var lockEnabled = true
     public private(set) var locked = false
     var steadyCount = 0
-    public var mode: ReturnMode = .snap
+    public var mode: ReturnMode = .snap               // snap = Live (back to now after a scratch), stay = Record (needle stays put)
+    public var loopWhole = false                      // Loop over everything recorded, not just loopLen
+    public var loopStop = false                       // Loop ends stop the needle (a run-out groove) instead of wrapping
     public var snapDelay: Int
     var xfade = 0, xfadePos = 0.0
     let xfadeLen: Int
@@ -254,23 +259,33 @@ public final class ScratchEngine {
     let dcA: Double
     var dxL = 0.0, dyL = 0.0, dxR = 0.0, dyR = 0.0
 
-    public init(sr: Double, seconds: Double = 32) {
+    public init(sr: Double, seconds: Double = 45, maxSeconds: Double = 300) {
         self.sr = sr
-        var l = 1; while Double(l) < sr * seconds { l <<= 1 }
-        len = l; mask = l - 1
-        Lb = .allocate(capacity: l); Lb.initialize(repeating: 0, count: l)
-        Rb = .allocate(capacity: l); Rb.initialize(repeating: 0, count: l)
+        cap = Int((sr * max(seconds, maxSeconds)).rounded()) + 8
+        // calloc: memory pages are only taken as the tape is actually written, so a short tape costs little
+        Lb = calloc(cap, MemoryLayout<Int16>.size)!.bindMemory(to: Int16.self, capacity: cap)
+        Rb = calloc(cap, MemoryLayout<Int16>.size)!.bindMemory(to: Int16.self, capacity: cap)
+        len = min(cap, max(Int(2 * sr), Int((seconds * sr).rounded())))
         minLag = (0.0025 * sr).rounded()
         snapDelay = Int((0.18 * sr).rounded())
         xfadeLen = Int((0.025 * sr).rounded())
         loopLen = Int((4 * sr).rounded())
         dcA = exp(-2 * .pi * 6 / sr)
     }
-    deinit { Lb.deallocate(); Rb.deallocate() }
+    deinit { free(Lb); free(Rb) }
 
-    @inline(__always) func readCh(_ buf: UnsafeMutablePointer<Float>, _ pos: Double) -> Double {
-        let fl = pos.rounded(.down), i = Int(fl), f = pos - fl, m = mask
-        let y0 = Double(buf[(i - 1) & m]), y1 = Double(buf[i & m]), y2 = Double(buf[(i + 1) & m]), y3 = Double(buf[(i + 2) & m])
+    /// A fresh, empty tape of `seconds` (up to the reserved maximum). No allocation: safe on the audio thread.
+    public func setTape(seconds: Double) {
+        len = min(cap, max(Int(2 * sr), Int((seconds * sr).rounded())))
+        w = 0; play = 0; started = false; frozen = false; xfade = 0
+        if loopLen > len - 8 { loopLen = len - 8 }
+    }
+    public var tapeSeconds: Double { Double(len) / sr }
+    @inline(__always) func ix(_ i: Int) -> Int { let m = i % len; return m < 0 ? m + len : m }
+
+    @inline(__always) func readCh(_ buf: UnsafeMutablePointer<Int16>, _ pos: Double) -> Double {
+        let fl = pos.rounded(.down), i = Int(fl), f = pos - fl, S = 1.0 / 32767
+        let y0 = Double(buf[ix(i - 1)]) * S, y1 = Double(buf[ix(i)]) * S, y2 = Double(buf[ix(i + 1)]) * S, y3 = Double(buf[ix(i + 2)]) * S
         let c1 = 0.5 * (y2 - y0)
         let c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3
         let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2)
@@ -283,6 +298,11 @@ public final class ScratchEngine {
         xfade = 1
     }
     public func setLoopSeconds(_ s: Double) { loopLen = min(Int((s * sr).rounded()), len - 8) }
+    /// The loop actually in use: what was asked for, but never more than has been recorded.
+    public var loopUsed: Int {
+        let avail = min(frozen ? freezeW : w, len) - 8
+        return max(64, min(loopWhole ? len - 8 : loopLen, avail))
+    }
     public func setFrozen(_ on: Bool) {
         if on && !frozen { frozen = true; freezeW = w }
         else if !on && frozen { frozen = false; jumpToLive() }
@@ -291,7 +311,10 @@ public final class ScratchEngine {
 
     /// v = decoder rate, fader = target gain (0…1). Returns (l, r).
     @inline(__always) public func step(_ inL: Float, _ inR: Float, _ v: Double, _ fader: Double) -> (Double, Double) {
-        if !frozen { Lb[w & mask] = inL; Rb[w & mask] = inR; w += 1 }
+        if !frozen {
+            let j = w % len
+            Lb[j] = Int16(max(-1, min(1, inL)) * 32767); Rb[j] = Int16(max(-1, min(1, inR)) * 32767); w += 1
+        }
         if !started { play = Double(w) - minLag; started = true }
 
         let k = 1 - exp(-1 / (max(0.05, smoothMs) * 0.001 * sr))
@@ -309,12 +332,13 @@ public final class ScratchEngine {
         play += r
         let top = Double(frozen ? freezeW : w)
         if frozen {
-            let lo = top - Double(loopLen), hi = top - 2
-            while play >= hi { play -= Double(loopLen) }
-            while play < lo { play += Double(loopLen) }
+            let L = Double(loopUsed), lo = top - L, hi = top - 2
+            if loopStop { play = min(max(play, lo), hi) }              // run-out: the needle stops at the ends
+            else { while play >= hi { play -= L }; while play < lo { play += L } }
         } else {
-            if play > top - minLag { play = top - minLag }
-            if play < top - Double(len) + 4 { play = top - Double(len) + 4 }
+            let back = Double(min(w, len) - 4)                     // only what has been recorded…
+            if play < top - back { play = top - back }
+            if play > top - minLag { play = top - minLag }         // …and never ahead of now (wins at start-up)
         }
         if !frozen && mode == .snap && locked && xfade == 0 && steadyCount > snapDelay && lag > minLag + 48 {
             jumpToLive()

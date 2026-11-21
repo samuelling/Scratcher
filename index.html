@@ -43,6 +43,10 @@
   .col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
   header .tabs { margin-left: 10px; }
   header .tabs button { padding: 6px 16px; font-size: 14px; }
+  .playmode button { min-width: 84px; }
+  .playmode button[data-v=record].on { background: var(--R); color: #000; }
+  .playmode button[data-v=loop].on { background: var(--A); color: #000; }
+  .playmode button[data-v=live].on { background: var(--G); color: #000; }
   .qbtn { width: 32px; height: 32px; padding: 0; border-radius: 50%; font-size: 16px; border-color: var(--B); color: var(--B); }
   .modal { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,0.94); display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 48px 16px; }
   .modal[hidden] { display: none; }
@@ -224,13 +228,14 @@
         <p class="note" id="xfNote"></p>
       </div>
       <div class="card">
-        <h2>Tape · last 10 s of live input</h2>
+        <h2>Tape · <span id="tapeLbl">last 45 s of live input</span></h2>
         <canvas class="strip" id="strip" width="1600" height="180"></canvas>
         <div class="row" style="margin-bottom:0">
-          <button id="jumpBtn" title="Space">Live <kbd>Space</kbd></button>
-          <button id="freezeBtn" title="F">Freeze <kbd>F</kbd></button>
+          <div class="seg playmode" id="playMode"><button data-v="live" title="1">Live</button><button data-v="record" title="2">Record</button><button data-v="loop" title="F">Loop <kbd>F</kbd></button></div>
+          <button id="jumpBtn" title="Space">Now <kbd>Space</kbd></button>
           <span class="note" style="margin:0">Hold <kbd>C</kbd> to cut</span>
         </div>
+        <p class="note" id="playNote"></p>
       </div>
     </div>
   </section>
@@ -314,13 +319,16 @@
         <h2>Feel</h2>
         <div class="row"><label>Smoothing</label><input type="range" id="smooth" class="grow" min="0.3" max="12" step="0.1" value="2"><output id="smoothOut">2.0 ms</output></div>
         <p class="note">Lower is tighter and grittier; higher is silkier but laggier.</p>
-        <div class="row"><label>After a scratch</label>
-          <div class="seg" id="mode"><button data-v="snap">Snap to live</button><button data-v="stay">Stay behind</button></div>
-        </div>
-        <div class="row"><label>Snap after</label><input type="range" id="snapDelay" class="grow" min="40" max="1500" step="10" value="180"><output id="snapDelayOut">180 ms</output></div>
+        <div class="row"><label>Live: snap back after</label><input type="range" id="snapDelay" class="grow" min="40" max="1500" step="10" value="180"><output id="snapDelayOut">180 ms</output></div>
         <div class="row"><label>1× lock</label><button id="lockBtn" class="on">on</button></div>
-        <p class="note">Lock treats ±3% of normal speed as exactly 1×, so the motor's wobble doesn't drift the needle off live.</p>
-        <div class="row"><label>Freeze loop</label><input type="range" id="loopSec" class="grow" min="0.5" max="16" step="0.5" value="4"><output id="loopSecOut">4.0 s</output></div>
+        <p class="note">Lock treats ±3% of normal speed as exactly 1×, so the motor's wobble doesn't drift the needle.</p>
+      </div>
+      <div class="card">
+        <h2>Tape</h2>
+        <div class="row"><label>Memory</label><div class="seg" id="tapeSec"><button data-v="45">45 s</button><button data-v="120">2 min</button><button data-v="300">5 min</button></div></div>
+        <div class="row"><label>Loop length</label><input type="range" id="loopSec" class="grow" min="0.5" max="45" step="0.5" value="4"><output id="loopSecOut">4.0 s</output></div>
+        <div class="row"><label>Loop ends</label><div class="seg" id="loopEnds"><button data-v="wrap">Wrap round</button><button data-v="stop">Stop (run-out)</button></div></div>
+        <p class="note">LiveSkratch records what comes in so you can scratch it. Memory is how far back you can go; changing it starts a fresh tape. Loop holds the last stretch (up to the whole tape) still, like a record.</p>
       </div>
       <div class="card">
         <h2>On-screen fader</h2>
@@ -452,12 +460,12 @@ class ToneDecoder {
   }
 }
 
+// The tape: live audio is recorded round a ring of `len` samples (16-bit, so 5 minutes of stereo is ~58 MB).
+// The needle (play) can sit anywhere on what has been recorded, never ahead of now.
 class ScratchEngine {
-  constructor(sr, seconds = 32) {
+  constructor(sr, seconds = 45) {
     this.sr = sr;
-    let len = 1; while (len < sr * seconds) len <<= 1;
-    this.len = len; this.mask = len - 1;
-    this.L = new Float32Array(len); this.R = new Float32Array(len);
+    this.setTape(seconds);
     this.w = 0;                  // absolute write count
     this.play = 0;               // absolute play position
     this.minLag = Math.round(0.0025 * sr);
@@ -467,7 +475,9 @@ class ScratchEngine {
     this.lockEnabled = true;
     this.locked = false;
     this.steadyCount = 0;
-    this.mode = 'snap';          // 'snap' | 'stay'
+    this.mode = 'snap';          // 'snap' (Live: back to now after a scratch) | 'stay' (Record: the needle stays where you leave it)
+    this.loopWhole = false;      // Loop over everything recorded, not just loopLen
+    this.loopStop = false;       // Loop ends stop the needle (a run-out groove) instead of wrapping round
     this.snapDelay = Math.round(0.18 * sr);
     this.xfade = 0; this.xfadeLen = Math.round(0.025 * sr); this.xfadePos = 0;
     this.frozen = false; this.freezeW = 0; this.loopLen = Math.round(4 * sr);
@@ -479,9 +489,18 @@ class ScratchEngine {
 
   setSmooth(ms) { this.smoothMs = ms; }
 
+  // a fresh, empty tape of `seconds`
+  setTape(seconds) {
+    this.len = Math.max(Math.round(2 * this.sr), Math.round(seconds * this.sr));
+    this.L = new Int16Array(this.len); this.R = new Int16Array(this.len);
+    this.w = 0; this.play = 0; this.started = false; this.frozen = false; this.xfade = 0;
+    if (this.loopLen > this.len - 8) this.loopLen = this.len - 8;
+  }
+  ix(i) { const m = i % this.len; return m < 0 ? m + this.len : m; }
+
   readCh(buf, pos) {
-    const i = Math.floor(pos), f = pos - i, m = this.mask;
-    const y0 = buf[(i - 1) & m], y1 = buf[i & m], y2 = buf[(i + 1) & m], y3 = buf[(i + 2) & m];
+    const i = Math.floor(pos), f = pos - i, S = 1 / 32767;
+    const y0 = buf[this.ix(i - 1)] * S, y1 = buf[this.ix(i)] * S, y2 = buf[this.ix(i + 1)] * S, y3 = buf[this.ix(i + 2)] * S;
     const c1 = 0.5 * (y2 - y0);
     const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
     const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
@@ -492,6 +511,12 @@ class ScratchEngine {
     if (this.frozen) return;
     this.xfadePos = this.w - this.minLag;
     this.xfade = 1;
+  }
+
+  // the loop actually in use: what was asked for, but never more than has been recorded
+  get loopUsed() {
+    const avail = Math.min(this.frozen ? this.freezeW : this.w, this.len) - 8;
+    return Math.max(64, Math.min(this.loopWhole ? this.len - 8 : this.loopLen, avail));
   }
 
   setFrozen(on, loopSec) {
@@ -505,7 +530,8 @@ class ScratchEngine {
   // v = decoder rate, fader = target gain (0..1), returns [l, r]
   step(inL, inR, v, fader, out) {
     if (!this.frozen) {
-      this.L[this.w & this.mask] = inL; this.R[this.w & this.mask] = inR;
+      const j = this.w % this.len;
+      this.L[j] = Math.max(-1, Math.min(1, inL)) * 32767; this.R[j] = Math.max(-1, Math.min(1, inR)) * 32767;
       this.w++;
     }
     if (!this.started) { this.play = this.w - this.minLag; this.started = true; }
@@ -527,12 +553,13 @@ class ScratchEngine {
     this.play += rate;
     const top = (this.frozen ? this.freezeW : this.w);
     if (this.frozen) {
-      const lo = top - this.loopLen, hi = top - 2;
-      while (this.play >= hi) this.play -= this.loopLen;
-      while (this.play < lo) this.play += this.loopLen;
+      const L = this.loopUsed, lo = top - L, hi = top - 2;
+      if (this.loopStop) { if (this.play > hi) this.play = hi; if (this.play < lo) this.play = lo; }   // run-out: the needle stops at the ends
+      else { while (this.play >= hi) this.play -= L; while (this.play < lo) this.play += L; }
     } else {
-      if (this.play > top - this.minLag) this.play = top - this.minLag;
-      if (this.play < top - this.len + 4) this.play = top - this.len + 4;
+      const back = Math.min(this.w, this.len) - 4;           // only what has been recorded…
+      if (this.play < top - back) this.play = top - back;
+      if (this.play > top - this.minLag) this.play = top - this.minLag;   // …and never ahead of now (wins at start-up)
     }
 
     // snap back to live after a scratch, once the platter is steady again
@@ -715,7 +742,8 @@ class FlutterProcessor extends AudioWorkletProcessor {
     this.wowRead = 'level'; // 'level' | 'pilot'
     this.pilotRef = 0.3;
     this.pilotGain = (f) => this.pilot.lnGain(f);
-    this.eng = new ScratchEngine(sr);
+    this.eng = new ScratchEngine(sr, 45);
+    this.binCount = 1900;   // tape overview bins: they always span the whole tape
     this.faderMode = 'wow';
     this.userGate = 0.0015; this.toneRef = 0;   // gate = max(user gate, 10% of calibrated tone level)
     this.refLevel = 0.3;
@@ -724,7 +752,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
     this.vf = { x: 0, cut: 0.05, width: 0.02, hamster: false };
     this.sim = { on: true, motor: true, hand: false, handV: 0, v: 0, theta: 0, fader: 1, seed: 1 };
     this.cal = null;
-    this.binSize = 256; this.binAcc = 0; this.binN = 0; this.newBins = [];
+    this.binSize = Math.max(64, Math.ceil(this.eng.len / this.binCount)); this.binAcc = 0; this.binN = 0; this.newBins = []; this.tapeId = 0;
     this.reportEvery = Math.round(sr / 60); this.since = 0;
     this.ctrlPk = 0; this.livePk = 0; this.outPk = 0;
     this.tmp = [0, 0];
@@ -762,7 +790,13 @@ class FlutterProcessor extends AudioWorkletProcessor {
         if ('pilotRef' in m) this.pilotRef = m.pilotRef;
         if ('outGain' in m) e.outGain = m.outGain;
         if ('sim' in m) this.sim.on = m.sim;
+        if ('tapeSec' in m && Math.round(m.tapeSec * sampleRate) !== e.len) {   // a new tape length: a fresh, empty tape
+          e.setTape(m.tapeSec);
+          this.binSize = Math.max(64, Math.ceil(e.len / this.binCount)); this.binAcc = 0; this.binN = 0; this.newBins.length = 0; this.tapeId++;
+        }
         if ('loopSec' in m) e.loopLen = Math.min(Math.round(m.loopSec * sampleRate), e.len - 8);
+        if ('loopWhole' in m) e.loopWhole = m.loopWhole;
+        if ('loopStop' in m) e.loopStop = m.loopStop;
         break;
       case 'freeze': e.setFrozen(m.on, m.loopSec); break;
       case 'jump': e.jumpToLive(); break;
@@ -895,7 +929,7 @@ class FlutterProcessor extends AudioWorkletProcessor {
         env: stereo ? q.env : d.env, active: stereo ? q.active : d.active, dir: stereo ? q.dir : d.dir,
         stat: stereo ? 0 : d.lastStat, pos: stereo ? q.posInt : d.posInt,
         gain: e.gain, ctrlPk: this.ctrlPk, livePk: this.livePk, outPk: this.outPk,
-        simV: sim.v, loopLen: e.loopLen, bins, pilotAmp: this.pilot.amp,
+        simV: sim.v, loopLen: e.loopUsed, bins, pilotAmp: this.pilot.amp, binSize: this.binSize, tapeLen: e.len, tapeId: this.tapeId,
       }, bins ? [bins.buffer] : []);
       this.ctrlPk = 0; this.livePk = 0; this.outPk = 0;
     }
@@ -925,6 +959,7 @@ const S = {
   faderLo: store.get('faderLo', 0.08), faderHi: store.get('faderHi', 0.45), gate: store.get('gate', -56),
   flip: store.get('flip', false), calib: store.get('calib', 1), refLevel: store.get('refLevel', 0.3),
   calInfo: store.get('calInfo', null), outGain: store.get('outGain', 1), loopSec: store.get('loopSec', 4),
+  tapeSec: String(store.get('tapeSec', '45')), loopEnds: store.get('loopEnds', 'wrap'),
   control: store.get('control', 'wow'), tcType: store.get('tcType', '1000'), carrierHz: store.get('carrierHz', 1000), balance: store.get('balance', 1),
   faderStyle: store.get('faderStyle', 'pad'), padMode: store.get('padMode', 'cuts'),
   tab: store.get('tab', 'scratch'), wowPark: store.get('wowPark', true),
@@ -1132,7 +1167,7 @@ function sendAllParams() {
   node.port.postMessage({
     type: 'params', smoothMs: S.smooth, mode: S.mode, snapDelay: S.snapDelay, lock: S.lock,
     faderMode: S.faderMode, wowRead: S.wowRead, pilotHz: S.pilotHz, pilotRef: S.pilotRef, vfX: S.vfX, vfCut: S.vfCut, vfWidth: S.vfWidth, hamster: S.hamster, faderLo: S.faderLo, faderHi: S.faderHi, gate: Math.pow(10, S.gate / 20),
-    flip: S.flip, calib: S.calib, refLevel: S.refLevel, toneRef: S.calInfo ? S.refLevel : 0, outGain: S.outGain, loopSec: S.loopSec,
+    flip: S.flip, calib: S.calib, refLevel: S.refLevel, toneRef: S.calInfo ? S.refLevel : 0, outGain: S.outGain, ...tapeParams(),
     control: S.control, carrierHz: S.carrierHz, balance: S.balance, padStyle: S.faderStyle === 'pad', padOpen: padResting(),
   });
 }
@@ -1140,11 +1175,12 @@ const padResting = () => S.padMode === 'cuts';   // open at rest if touching cut
 const param = (o) => node && node.port.postMessage(Object.assign({ type: 'params' }, o));
 
 // ---------- messages ----------
-const BIN_COUNT = 1900; // ~10 s at 48k / 256
-const bins = new Float32Array(BIN_COUNT); let binHead = 0;
+const BIN_COUNT = 1900; // the overview spans the whole tape: binSize samples per bin
+const bins = new Float32Array(BIN_COUNT); let binHead = 0, tapeId = 0;
 function onMsg(m) {
   if (m.type === 'state') {
     st = m;
+    if (m.tapeId !== tapeId) { tapeId = m.tapeId; bins.fill(0); binHead = 0; }   // a fresh tape
     if (m.bins) for (let i = 0; i < m.bins.length; i++) { bins[binHead] = m.bins[i]; binHead = (binHead + 1) % BIN_COUNT; }
   } else if (m.type === 'recorded') {
     const ch = 4, n = m.buf.length / ch, bytes = 44 + m.buf.length * 4;
@@ -1244,7 +1280,7 @@ const sc = $('strip'), scx = sc.getContext('2d');
 function drawStrip() {
   const W = sc.width, H = sc.height, sr = ctx ? ctx.sampleRate : SPS;
   scx.clearRect(0, 0, W, H);
-  const secPerBin = 256 / sr, total = BIN_COUNT * secPerBin;
+  const secPerBin = (st.binSize || 256) / sr, total = BIN_COUNT * secPerBin;
   // frozen loop region
   if (st.frozen) {
     const lw = (st.loopLen / sr) / total * W;
@@ -1264,7 +1300,8 @@ function drawStrip() {
   }
   // seconds ticks
   scx.fillStyle = '#3a3842';
-  for (let s = 1; s < total; s++) scx.fillRect(W - s / total * W, 0, 1, 10);
+  const tick = total <= 15 ? 1 : total <= 60 ? 5 : total <= 150 ? 10 : 30;
+  for (let s = tick; s < total; s += tick) scx.fillRect(W - s / total * W, 0, s % (tick * 6) ? 1 : 2, s % (tick * 6) ? 10 : 18);
   // needle
   const lagS = st.lag / sr;
   const nx = W - Math.min(lagS, total) / total * W;
@@ -1297,14 +1334,14 @@ function draw() {
   $('roSpeed').innerHTML = `${sp.toFixed(2)}<small>×</small>`;
   $('lagKey').textContent = st.frozen ? 'LOOP POSITION' : 'BEHIND LIVE';
   const lagMs = Math.max(0, st.lag / sr * 1000 - 2.5);
-  $('roLag').innerHTML = lagMs < 1 ? `0<small>ms</small>` : lagMs < 1000 ? `${lagMs.toFixed(0)}<small>ms</small>` : `${(lagMs / 1000).toFixed(2)}<small>s</small>`;
+  $('roLag').innerHTML = lagMs < 1 ? `0<small>ms</small>` : lagMs < 1000 ? `${lagMs.toFixed(0)}<small>ms</small>` : lagMs < 60000 ? `${(lagMs / 1000).toFixed(2)}<small>s</small>` : `${Math.floor(lagMs / 60000)}:${String(Math.floor(lagMs / 1000) % 60).padStart(2, '0')}<small>min</small>`;
   $('roDir').textContent = !st.active ? '·' : (st.dir > 0 ? '→' : '←');
   $('roFader').innerHTML = `${Math.round((st.gain || 0) * 100)}<small>%</small>`;
   $('chSig').classList.toggle('lit', !!st.active);
   $('chLock').classList.toggle('lit', !!st.locked);
   $('chLive').classList.toggle('lit', !st.frozen && lagMs < 1);
   $('chFrz').classList.toggle('lit', !!st.frozen);
-  $('freezeBtn').classList.toggle('on', !!st.frozen);
+  playModeUI();
   document.querySelectorAll('.mCtrl').forEach(e => setBar(e, st.ctrlPk)); document.querySelectorAll('.mLive').forEach(e => setBar(e, st.livePk)); document.querySelectorAll('.mOut').forEach(e => setBar(e, st.outPk));
   requestAnimationFrame(draw);
 }
@@ -1380,7 +1417,37 @@ $('pad').addEventListener('pointercancel', () => setPad(false));
 seg('faderStyle', 'faderStyle', () => { param({ padStyle: S.faderStyle === 'pad', padOpen: padResting() }); padUI(); if (S.faderStyle === 'slider') drawXf(); });
 seg('padMode', 'padMode', () => { param({ padOpen: padResting() }); padUI(); });
 padUI();
-seg('mode', 'mode', () => param({ mode: S.mode }));
+// ---------- play mode: Live (snap back to now) · Record (a normal record: the needle stays put) · Loop (hold the tape still) ----------
+const tapeN = () => parseFloat(S.tapeSec);
+function tapeParams() {
+  const whole = S.loopSec >= tapeN() - 0.01;
+  return { tapeSec: tapeN(), loopSec: Math.min(S.loopSec, tapeN()), loopWhole: whole, loopStop: S.loopEnds === 'stop' };
+}
+let lastPlay = '';
+function playModeUI() {
+  const m = st.frozen ? 'loop' : S.mode === 'stay' ? 'record' : 'live';
+  if (m === lastPlay) return; lastPlay = m;
+  $('playMode').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === m));
+  $('playNote').textContent = m === 'live' ? 'Live: after a scratch the needle jumps back to now once the platter is back at normal speed.'
+    : m === 'record' ? 'Record: like a normal record. The needle stays wherever you leave it, anywhere on the tape, and plays from there.'
+    : 'Loop: the tape stops recording and holds still, so you can scratch over it again and again.';
+}
+function setPlayMode(m) {
+  if (!node) return;
+  if (m === 'loop') { if (!st.frozen) node.port.postMessage({ type: 'freeze', on: true }); return; }
+  S.mode = m === 'record' ? 'stay' : 'snap'; save('mode'); param({ mode: S.mode });
+  if (st.frozen) node.port.postMessage({ type: 'freeze', on: false });
+  lastPlay = ''; st.frozen = false; playModeUI();
+}
+$('playMode').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setPlayMode(b.dataset.v); });
+function loopSliderUI() {
+  const el = $('loopSec'); el.max = tapeN(); if (S.loopSec > tapeN()) { S.loopSec = tapeN(); save('loopSec'); }
+  el.value = S.loopSec; $('loopSecOut').textContent = fmtLoop(S.loopSec);
+  $('tapeLbl').textContent = 'last ' + (tapeN() < 60 ? tapeN() + ' s' : tapeN() / 60 + ' min') + ' of live input';
+}
+const fmtLoop = (v) => v >= tapeN() - 0.01 ? 'whole tape' : v < 60 ? v.toFixed(1) + ' s' : `${Math.floor(v / 60)}:${String(Math.round(v % 60)).padStart(2, '0')}`;
+seg('tapeSec', 'tapeSec', () => { loopSliderUI(); param(tapeParams()); });
+seg('loopEnds', 'loopEnds', () => param(tapeParams()));
 const wowReadNote = () => { $('wowReadNote').innerHTML = S.control === 'timecode'
   ? '<b>Timecode mode:</b> a timecode deck has no WOW fader, so only the on-screen fader cuts the sound. These settings apply to the WOW tone.'
   : S.wowRead === 'pilot'
@@ -1419,7 +1486,8 @@ slider('faderLo', 'faderLo', v => Math.round(v * 100) + '%', v => param({ faderL
 slider('faderHi', 'faderHi', v => Math.round(v * 100) + '%', v => param({ faderHi: v }));
 slider('gate', 'gate', v => v + ' dB', v => param({ gate: Math.pow(10, v / 20) }));
 slider('outGain', 'outGain', v => Math.round(v * 100) + '%', v => param({ outGain: v }));
-slider('loopSec', 'loopSec', v => v.toFixed(1) + ' s', v => param({ loopSec: v }));
+slider('loopSec', 'loopSec', v => fmtLoop(v), () => param(tapeParams()));
+loopSliderUI();
 $('ctrlDev').addEventListener('change', (e) => { S.ctrlDev = e.target.value; save('ctrlDev'); applyRouting(); });
 $('liveDev').addEventListener('change', (e) => { S.liveDev = e.target.value; save('liveDev'); applyRouting(); });
 $('outDev').addEventListener('change', (e) => { S.outDev = e.target.value; save('outDev'); setOutput(S.outDev); });
@@ -1444,8 +1512,7 @@ $('recBtn').addEventListener('click', () => {
   node.port.postMessage({ type: 'record', sec: 10 });
 });
 $('jumpBtn').addEventListener('click', () => node && node.port.postMessage({ type: 'jump' }));
-$('freezeBtn').addEventListener('click', () => toggleFreeze());
-function toggleFreeze() { if (!node) return; node.port.postMessage({ type: 'freeze', on: !st.frozen, loopSec: S.loopSec }); }
+function toggleFreeze() { setPlayMode(st.frozen ? (S.mode === 'stay' ? 'record' : 'live') : 'loop'); }
 $('simMotor').addEventListener('click', (e) => {
   const on = !e.target.classList.contains('on'); e.target.classList.toggle('on', on); e.target.textContent = on ? 'Motor on' : 'Motor off';
   node && node.port.postMessage({ type: 'simMotor', on });
@@ -1456,6 +1523,9 @@ window.addEventListener('keydown', (e) => {
   if (!node || e.repeat || e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
   if (e.code === 'Space') { e.preventDefault(); node.port.postMessage({ type: 'jump' }); }
   else if (e.code === 'KeyF') toggleFreeze();
+  else if (e.code === 'Digit1') setPlayMode('live');
+  else if (e.code === 'Digit2') setPlayMode('record');
+  else if (e.code === 'Digit3') setPlayMode('loop');
   else if (e.code === 'KeyC') node.port.postMessage({ type: 'softCut', on: true });
 });
 window.addEventListener('keyup', (e) => { if (node && e.code === 'KeyC') node.port.postMessage({ type: 'softCut', on: false }); });
@@ -1564,14 +1634,16 @@ const HELP = {
     ['Watching', [
       ['◎', 'Platter', 'Turns with your deck’s platter. With Virtual platter chosen on the Setup tab, drag it with the mouse to scratch.'],
       ['×', 'Speed, direction, behind live', 'Speed is in multiples of normal (1× = motor speed). Behind live is how far the needle sits behind the audio coming in right now.'],
-      ['∿', 'Tape strip', 'The last 10 seconds of incoming audio. The red line is the needle; when frozen, the shaded area is the loop you’re scratching.'],
+      ['∿', 'Tape strip', 'Everything you can reach: the whole tape, oldest on the left, now on the right. The red line is the needle; in Loop, the dashed box is the stretch you’re scratching.'],
       ['●', 'Status lights', 'Signal: the control signal is coming in. 1× lock: the platter is at normal speed, so playback locks to live. Live: you’re hearing right now. Frozen: you’re scratching a held loop.'],
     ]],
     ['Playing', [
       ['▮', 'Fader pad', 'An on-screen cut switch, like a PT01’s: press it to chop the sound in rhythm with your scratches. It works together with the WOW’s own fader: sound plays only when both are open. On the Feel tab you can make pressing open the sound instead, or switch to a slider.'],
-      ['❄', 'Freeze', 'Stops taking in new audio, so the last few seconds become a fixed loop you can scratch over and over. Press again to go back to live.'],
-      ['⇥', 'Live', 'Jumps the needle back to right now. After a scratch it also snaps back by itself once the platter is back at 1× (Feel tab).'],
-      ['⌨', 'Keys', 'Space: back to live. F: freeze. Hold C: cut. ?: this help.'],
+      ['◉', 'Live', 'Live: after a scratch the needle jumps back to now once the platter is back at normal speed. For cutting up whatever is playing right now.'],
+      ['●', 'Record', 'Record: like a normal record. The needle stays wherever you leave it and plays on from there, anywhere on the tape (45 s to 5 min back, set in Feel).'],
+      ['↻', 'Loop', 'Loop: the tape stops recording and holds still, so you can scratch the same stretch again and again, up to the whole tape. Tap Live or Record to carry on.'],
+      ['⇥', 'Now', 'Jumps the needle to right now, in any mode.'],
+      ['⌨', 'Keys', '1 Live, 2 Record, 3 or F Loop. Space: now. Hold C: cut. ?: this help.'],
     ]],
   ]],
   setup: ['Setup', [
@@ -1595,9 +1667,10 @@ const HELP = {
   feel: ['Feel', [
     ['Feel', [
       ['∿', 'Smoothing', 'Lower is tighter and more immediate; higher is smoother but slightly laggy.'],
-      ['↩', 'After a scratch', 'Snap to live returns to live audio once the platter is back at normal speed (after the snap delay). Stay behind keeps playing from where you left the needle.'],
+      ['↩', 'Live: snap back after', 'In Live, how long the platter must be back at normal speed before the needle jumps to now.'],
       ['⊙', '1× lock', 'When the platter runs at motor speed, play exactly in time with live audio so it never drifts.'],
-      ['❄', 'Freeze loop', 'How many seconds Freeze holds on to.'],
+      ['▭', 'Memory', 'How far back you can scratch: 45 s, 2 min or 5 min of what came in. Changing it starts a fresh tape.'],
+      ['↻', 'Loop length, Loop ends', 'How much Loop holds, up to the whole tape, and whether the needle wraps round at the ends or stops like a record’s run-out groove.'],
     ]],
     ['On-screen fader', [
       ['▮', 'Tap pad or slider', 'Tap pad: a cut switch you press in rhythm. Choose whether pressing it cuts or opens the sound.'],
@@ -1646,7 +1719,8 @@ const WALK = [
     'Setup tab → Calibrate. It takes 1.5 seconds and measures your deck’s exact speed and levels.']],
   ['✋', '4 · Scratch', [
     'Scratch tab: move the record and the live audio moves with it.',
-    'The WOW’s fader and the on-screen pad both cut the sound: press the pad to chop. Freeze holds a loop; Live jumps back to now.',
+    'The WOW’s fader and the on-screen pad both cut the sound: press the pad to chop.',
+    'Live snaps back to now after a scratch; Record plays like a normal record from wherever you leave the needle; Loop holds the tape still. Now jumps to the present.',
     'Fine-tune the fader and feel on the Feel tab.',
     'Press ? on any tab for help.']],
 ];
