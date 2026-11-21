@@ -40,8 +40,31 @@ final class LoopSlot {
 /// The fast-changing display data.
 final class LiveState: ObservableObject {
     @Published var state = ProcessorState()
-    @Published var bins: [Float] = Array(repeating: 0, count: 2048)
-    @Published var binHead = 0
+    /// The tape strip to draw: envelope points (oldest first) covering `viewSpan` seconds, the right edge `viewR` s behind now.
+    @Published var bins: [Float] = Array(repeating: 0, count: TapeOverview.count)
+    @Published var viewR = 0.0
+    @Published var viewSpan = 10.0
+}
+
+/// What the tape strip shows: the whole tape, or a zoomed window that follows the needle.
+enum TapeOverview {
+    static let count = 320
+    static let zoomSeconds = 10.0
+    /// The window's right edge (s behind now) that keeps the needle in view, 30% in from the right.
+    static func target(lag: Double, span: Double, tape: Double) -> Double { max(0, min(tape - span, lag - 0.3 * span)) }
+    /// Loudest bin under each point. Bin k back from `head` covers lag [k, k+1) × 256 samples.
+    static func envelope(env: UnsafeMutablePointer<Float>, len: Int, head: Int, binSec: Double, right: Double, span: Double) -> [Float] {
+        let P = count
+        var out = [Float](repeating: 0, count: P)
+        for i in 0..<P {
+            let a = right + span * Double(P - 1 - i) / Double(P), b = a + span / Double(P)
+            let k0 = Int(a / binSec), k1 = min(len - 2, max(k0 + 1, Int(b / binSec)))
+            var m: Float = 0, k = k0
+            while k < k1 { let j = ((head - 1 - k) % len + len) % len; m = max(m, env[j]); k += 1 }
+            out[i] = m
+        }
+        return out
+    }
 }
 
 /// UI model shared by the app and the AUv3 view: polls the processor ~30×/s and forwards actions.
@@ -93,11 +116,13 @@ final class ScratcherModel: ObservableObject {
         if handDown && Date().timeIntervalSince(handStamp) > 0.06 { p.simHandV = 0 }
         live.state = p.state
         p.resetPeaks()
-        // tape overview
-        var b = live.bins
-        let n = min(b.count, p.binCount)
-        for i in 0..<n { b[i] = p.bins[i] }
-        live.bins = b; live.binHead = p.binHead
+        // tape overview: the whole tape, or a zoomed window gliding after the needle
+        let tape = Double(p.eng.len) / p.sr
+        let span = settings.tapeZoom ? min(TapeOverview.zoomSeconds, tape) : tape
+        let target = settings.tapeZoom ? TapeOverview.target(lag: p.state.lag / p.sr, span: span, tape: tape) : 0
+        let r = abs(target - live.viewR) > span || span != live.viewSpan ? target : live.viewR + (target - live.viewR) * 0.3
+        live.bins = TapeOverview.envelope(env: p.env, len: p.envLen, head: p.envHead, binSec: Double(p.binSize) / p.sr, right: r, span: span)
+        live.viewR = r; live.viewSpan = span
         // calibration finished?
         if p.calibrationSerial != lastCalSerial, let c = p.calibration {
             lastCalSerial = p.calibrationSerial

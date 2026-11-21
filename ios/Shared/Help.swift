@@ -34,7 +34,7 @@ enum HelpText {
                     HelpItem(icon: "gauge.with.dots.needle.33percent", title: "Speed, direction, behind live",
                              text: "Speed is in multiples of normal (1× = motor speed). Behind live is how far the needle sits behind the audio coming in right now."),
                     HelpItem(icon: "waveform", title: "Tape strip",
-                             text: "Everything you can reach: the whole tape, oldest on the left, now on the right. The red line is the needle; in Loop, the dashed box is the stretch you're scratching."),
+                             text: "What you can reach on the tape, now on the right. Tap it to switch between a 10-second zoom that follows the needle and the whole tape. The red line is the needle; in Loop, the dashed box is the stretch you're scratching."),
                     HelpItem(icon: "checkmark.circle", title: "Status badges",
                              text: "Tone: the WOW's control tone is coming in. 1×: the platter is at normal speed, so playback locks to live. Calibrated: the app has measured your WOW."),
                 ]),

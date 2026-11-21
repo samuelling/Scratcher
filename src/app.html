@@ -89,7 +89,7 @@
   .chip.lock.lit::before { background: var(--B); border-color: var(--B); }
   .chip.live.lit::before { background: var(--R); border-color: var(--R); }
   .chip.frz.lit::before { background: var(--A); border-color: var(--A); }
-  canvas.strip { width: 100%; height: 90px; display: block; background: #000; border-radius: 8px; border: 1.5px solid var(--line); }
+  canvas.strip { cursor: pointer; width: 100%; height: 90px; display: block; background: #000; border-radius: 8px; border: 1.5px solid var(--line); }
   canvas.meter { width: 100%; height: 26px; display: block; background: #000; }
   .row { display: flex; align-items: center; gap: 8px; margin: 9px 0; flex-wrap: wrap; }
   .row label { min-width: 92px; color: var(--dim); font: 600 12px/1.3 var(--wide); letter-spacing: 0.12em; text-transform: uppercase; }
@@ -382,7 +382,7 @@ const S = {
   faderLo: store.get('faderLo', 0.08), faderHi: store.get('faderHi', 0.45), gate: store.get('gate', -56),
   flip: store.get('flip', false), calib: store.get('calib', 1), refLevel: store.get('refLevel', 0.3),
   calInfo: store.get('calInfo', null), outGain: store.get('outGain', 1), loopSec: store.get('loopSec', 4),
-  tapeSec: String(store.get('tapeSec', '45')), loopEnds: store.get('loopEnds', 'wrap'),
+  tapeSec: String(store.get('tapeSec', '45')), loopEnds: store.get('loopEnds', 'wrap'), tapeZoom: store.get('tapeZoom', 'zoom'),
   control: store.get('control', 'wow'), tcType: store.get('tcType', '1000'), carrierHz: store.get('carrierHz', 1000), balance: store.get('balance', 1),
   faderStyle: store.get('faderStyle', 'pad'), padMode: store.get('padMode', 'cuts'),
   tab: store.get('tab', 'scratch'), wowPark: store.get('wowPark', true),
@@ -598,13 +598,14 @@ const padResting = () => S.padMode === 'cuts';   // open at rest if touching cut
 const param = (o) => node && node.port.postMessage(Object.assign({ type: 'params' }, o));
 
 // ---------- messages ----------
-const BIN_COUNT = 1900; // the overview spans the whole tape: binSize samples per bin
-const bins = new Float32Array(BIN_COUNT); let binHead = 0, tapeId = 0;
+// The tape overview: the loudness of every 256 samples on the whole tape (a ring, newest at envHead - 1).
+let env = new Float32Array(Math.ceil(45 * 48000 / 256) + 2), envHead = 0, tapeId = 0;
 function onMsg(m) {
   if (m.type === 'state') {
     st = m;
-    if (m.tapeId !== tapeId) { tapeId = m.tapeId; bins.fill(0); binHead = 0; }   // a fresh tape
-    if (m.bins) for (let i = 0; i < m.bins.length; i++) { bins[binHead] = m.bins[i]; binHead = (binHead + 1) % BIN_COUNT; }
+    const need = Math.ceil((m.tapeLen || 0) / 256) + 2;
+    if (m.tapeId !== tapeId || (m.tapeLen && need !== env.length)) { tapeId = m.tapeId; env = new Float32Array(need); envHead = 0; }   // a fresh tape
+    if (m.bins) for (let i = 0; i < m.bins.length; i++) { env[envHead] = m.bins[i]; envHead = (envHead + 1) % env.length; }
   } else if (m.type === 'recorded') {
     const ch = 4, n = m.buf.length / ch, bytes = 44 + m.buf.length * 4;
     const buf = new ArrayBuffer(bytes), dv = new DataView(buf);
@@ -700,37 +701,49 @@ function drawSpeedMeter() {
 }
 
 const sc = $('strip'), scx = sc.getContext('2d');
+// The strip shows the whole tape, or a 10 s window that glides after the needle (tap the strip to switch).
+const ZOOM_SEC = 10;
+let viewR = 0, viewSpan = 0;
 function drawStrip() {
   const W = sc.width, H = sc.height, sr = ctx ? ctx.sampleRate : SPS;
   scx.clearRect(0, 0, W, H);
-  const secPerBin = (st.binSize || 256) / sr, total = BIN_COUNT * secPerBin;
-  // frozen loop region
+  const tape = (st.tapeLen || 45 * sr) / sr, zoom = S.tapeZoom === 'zoom', span = zoom ? Math.min(ZOOM_SEC, tape) : tape;
+  const lagS = (st.lag || 0) / sr;
+  const target = zoom ? Math.max(0, Math.min(tape - span, lagS - 0.3 * span)) : 0;
+  viewR = (Math.abs(target - viewR) > span || span !== viewSpan) ? target : viewR + (target - viewR) * 0.2;
+  viewSpan = span;
+  const xOf = (lag) => W * (1 - (lag - viewR) / span);
+  // the stretch Loop is holding
   if (st.frozen) {
-    const lw = (st.loopLen / sr) / total * W;
-    scx.strokeStyle = '#ffb547'; scx.lineWidth = 3; scx.setLineDash([4, 8]); scx.strokeRect(W - lw + 2, 3, lw - 4, H - 6); scx.setLineDash([]);
+    const x0 = Math.max(2, xOf(st.loopLen / sr)), x1 = Math.min(W - 2, xOf(0));
+    if (x1 > x0) { scx.strokeStyle = '#ffb547'; scx.lineWidth = 3; scx.setLineDash([4, 8]); scx.strokeRect(x0, 3, x1 - x0, H - 6); scx.setLineDash([]); }
   }
-  // the envelope as two thin lines (line art, no fill), plus a centre line
   scx.strokeStyle = '#3a3842'; scx.lineWidth = 1.5; scx.beginPath(); scx.moveTo(0, H / 2); scx.lineTo(W, H / 2); scx.stroke();
+  // envelope: the loudest 256-sample bin under each point, oldest on the left
+  const P = 800, binSec = 256 / sr, n = env.length, pts = new Float32Array(P);
+  for (let i = 0; i < P; i++) {
+    const a = viewR + span * (P - 1 - i) / P, b = a + span / P;
+    const k0 = Math.floor(a / binSec), k1 = Math.min(n - 2, Math.max(k0 + 1, Math.floor(b / binSec)));
+    let m = 0; for (let k = k0; k < k1; k++) { const v = env[((envHead - 1 - k) % n + n) % n]; if (v > m) m = v; }
+    pts[i] = m;
+  }
   scx.strokeStyle = st.frozen ? '#ffb547' : '#e9e6ff'; scx.lineWidth = 2; scx.lineJoin = 'round';
   for (const sgn of [-1, 1]) {
     scx.beginPath();
-    for (let i = 0; i < BIN_COUNT; i += 2) {
-      const v = Math.max(bins[(binHead + i) % BIN_COUNT], bins[(binHead + i + 1) % BIN_COUNT]);
-      const y = H / 2 + sgn * Math.min(1, Math.sqrt(v)) * (H / 2 - 6), px = i / BIN_COUNT * W;
-      i ? scx.lineTo(px, y) : scx.moveTo(px, y);
-    }
+    for (let i = 0; i < P; i++) { const x = i / (P - 1) * W, y = H / 2 + sgn * Math.min(1, Math.sqrt(pts[i])) * (H / 2 - 6); i ? scx.lineTo(x, y) : scx.moveTo(x, y); }
     scx.stroke();
   }
-  // seconds ticks
+  // seconds ticks, measured back from now
+  const tick = span <= 15 ? 1 : span <= 60 ? 5 : span <= 150 ? 10 : 30;
   scx.fillStyle = '#3a3842';
-  const tick = total <= 15 ? 1 : total <= 60 ? 5 : total <= 150 ? 10 : 30;
-  for (let s = tick; s < total; s += tick) scx.fillRect(W - s / total * W, 0, s % (tick * 6) ? 1 : 2, s % (tick * 6) ? 10 : 18);
+  for (let t = Math.ceil(viewR / tick) * tick; t < viewR + span; t += tick) scx.fillRect(xOf(t), 0, t % (tick * 6) ? 1 : 2, t % (tick * 6) ? 10 : 18);
   // needle
-  const lagS = st.lag / sr;
-  const nx = W - Math.min(lagS, total) / total * W;
+  const nx = Math.min(W - 2, Math.max(2, xOf(lagS)));
   scx.fillStyle = '#ff3b5c'; scx.fillRect(nx - 1.5, 0, 3, H);
-  scx.fillStyle = '#3a3842'; scx.fillRect(W - 2, 0, 2, H);
+  scx.fillStyle = '#7b7890'; scx.font = '600 28px "Saira Condensed", sans-serif';
+  scx.fillText(zoom ? 'ZOOM · TAP FOR WHOLE TAPE' : 'WHOLE TAPE · TAP TO ZOOM', 12, H - 10);
 }
+$('strip').addEventListener('click', () => { S.tapeZoom = S.tapeZoom === 'zoom' ? 'whole' : 'zoom'; save('tapeZoom'); });
 
 // The WOW is in pilot mode if an 18 kHz pilot is present: switch the fader reading automatically,
 // otherwise the unfiltered pilot scrambles the speed reading.
@@ -866,7 +879,7 @@ $('playMode').addEventListener('click', (e) => { const b = e.target.closest('but
 function loopSliderUI() {
   const el = $('loopSec'); el.max = tapeN(); if (S.loopSec > tapeN()) { S.loopSec = tapeN(); save('loopSec'); }
   el.value = S.loopSec; $('loopSecOut').textContent = fmtLoop(S.loopSec);
-  $('tapeLbl').textContent = 'last ' + (tapeN() < 60 ? tapeN() + ' s' : tapeN() / 60 + ' min') + ' of live input';
+  $('tapeLbl').textContent = (tapeN() < 60 ? tapeN() + ' s' : tapeN() / 60 + ' min') + ' of live input';
 }
 const fmtLoop = (v) => v >= tapeN() - 0.01 ? 'whole tape' : v < 60 ? v.toFixed(1) + ' s' : `${Math.floor(v / 60)}:${String(Math.round(v % 60)).padStart(2, '0')}`;
 seg('tapeSec', 'tapeSec', () => { loopSliderUI(); param(tapeParams()); });
@@ -1057,7 +1070,7 @@ const HELP = {
     ['Watching', [
       ['◎', 'Platter', 'Turns with your deck’s platter. With Virtual platter chosen on the Setup tab, drag it with the mouse to scratch.'],
       ['×', 'Speed, direction, behind live', 'Speed is in multiples of normal (1× = motor speed). Behind live is how far the needle sits behind the audio coming in right now.'],
-      ['∿', 'Tape strip', 'Everything you can reach: the whole tape, oldest on the left, now on the right. The red line is the needle; in Loop, the dashed box is the stretch you’re scratching.'],
+      ['∿', 'Tape strip', 'What you can reach on the tape, now on the right. Tap it to switch between a 10-second zoom that follows the needle and the whole tape. The red line is the needle; in Loop, the dashed box is the stretch you’re scratching.'],
       ['●', 'Status lights', 'Signal: the control signal is coming in. 1× lock: the platter is at normal speed, so playback locks to live. Live: you’re hearing right now. Frozen: you’re scratching a held loop.'],
     ]],
     ['Playing', [

@@ -469,34 +469,46 @@ struct TapeView: View {
     init(model: ScratcherModel) { _model = ObservedObject(wrappedValue: model); _live = ObservedObject(wrappedValue: model.live) }
     var body: some View {
         Canvas { ctx, sz in
-            let bins = live.bins, n = bins.count, head = live.binHead
+            let bins = live.bins, n = bins.count, span = max(0.001, live.viewSpan), r0 = live.viewR
+            let sr = model.sampleRate, s = live.state
+            let xOf = { (lag: Double) -> CGFloat in sz.width * CGFloat(1 - (lag - r0) / span) }
             let frame = CGRect(origin: .zero, size: sz).insetBy(dx: 0.75, dy: 0.75)
             ctx.stroke(Path(roundedRect: frame, cornerRadius: 8), with: .color(Theme.line), lineWidth: Theme.stroke)
-            let w = sz.width / CGFloat(n), mid = sz.height / 2
+            let mid = sz.height / 2
             var center = Path(); center.move(to: CGPoint(x: 0, y: mid)); center.addLine(to: CGPoint(x: sz.width, y: mid))
             ctx.stroke(center, with: .color(Theme.line), lineWidth: 1)
-            let s = live.state
+            // seconds ticks, measured back from now
+            let tick = span <= 15 ? 1.0 : span <= 60 ? 5 : span <= 150 ? 10 : 30
+            var t = (r0 / tick).rounded(.up) * tick
+            var ticks = Path()
+            while t < r0 + span { let x = xOf(t); ticks.move(to: CGPoint(x: x, y: 0)); ticks.addLine(to: CGPoint(x: x, y: 6)); t += tick }
+            ctx.stroke(ticks, with: .color(Theme.line), lineWidth: 1)
             // the envelope as two thin lines
             for sign in [-1.0, 1.0] {
                 var p = Path()
-                var i = 0
-                while i < n {
-                    let v = CGFloat(min(1, max(bins[(head + i) % n], bins[(head + i + 1) % n]).squareRoot()))
-                    let pt = CGPoint(x: CGFloat(i) * w, y: mid + CGFloat(sign) * v * (mid - 5))
+                for i in 0..<n {
+                    let v = CGFloat(min(1, bins[i].squareRoot()))
+                    let pt = CGPoint(x: CGFloat(i) * sz.width / CGFloat(max(1, n - 1)), y: mid + CGFloat(sign) * v * (mid - 5))
                     if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-                    i += 2
                 }
                 ctx.stroke(p, with: .color(s.frozen ? Theme.amber : Theme.ink), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
             }
-            let bs = Double(model.host?.processor.binSize ?? 256)
-            if s.frozen {
-                let lw = CGFloat(Double(s.loopLen) / bs) * w
-                ctx.stroke(Path(roundedRect: CGRect(x: sz.width - lw + 2, y: 3, width: lw - 4, height: sz.height - 6), cornerRadius: 4),
-                           with: .color(Theme.amber), style: StrokeStyle(lineWidth: Theme.stroke, dash: [3, 5]))
+            if s.frozen {                                   // the stretch Loop is holding
+                let x0 = max(2, xOf(Double(s.loopLen) / sr)), x1 = min(sz.width - 2, xOf(0))
+                if x1 > x0 {
+                    ctx.stroke(Path(roundedRect: CGRect(x: x0, y: 3, width: x1 - x0, height: sz.height - 6), cornerRadius: 4),
+                               with: .color(Theme.amber), style: StrokeStyle(lineWidth: Theme.stroke, dash: [3, 5]))
+                }
             }
-            let x = sz.width - CGFloat(s.lag / bs) * w
+            let x = min(sz.width - 1, max(1, xOf(s.lag / sr)))
             ctx.fill(Path(CGRect(x: x - 1, y: 0, width: 2, height: sz.height)), with: .color(Theme.red))
         }
+        .overlay(alignment: .bottomLeading) {
+            Text(model.settings.tapeZoom ? "ZOOM · TAP FOR WHOLE TAPE" : "WHOLE TAPE · TAP TO ZOOM")
+                .font(Theme.wide(9, .semibold)).kerning(1.2).foregroundStyle(Theme.dim).padding(.leading, 8).padding(.bottom, 3)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { var st = model.settings; st.tapeZoom.toggle(); model.settings = st }
     }
 }
 

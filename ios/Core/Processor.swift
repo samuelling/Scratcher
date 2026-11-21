@@ -61,8 +61,8 @@ public final class Processor {
     /// Tape length asked for (seconds): applied on the audio thread, which starts a fresh tape.
     public var tapeTarget: Double; var tapeApplied: Double
     public let maxTape: Double
-    /// Samples per tape-overview bin: the overview always spans the whole tape.
-    public private(set) var binSize = 256
+    /// Tape overview: the loudness of every 256 samples on the tape, newest at envHead - 1 (a ring of envLen).
+    public let binSize = 256
     public var calibrateRequests = 0; var calibrateHandled = 0
     public var recordRequests = 0; var recordHandled = 0
 
@@ -84,9 +84,9 @@ public final class Processor {
     var calOn = false, calI = 0, calCount = 0, calActive = 0, calDir = 0.0, calDirN = 0, calEnv = 0.0, calEnvN = 0
 
     // tape overview: one peak per 256 input samples, ring of 2048
-    public let binCount = 2048
-    public let bins: UnsafeMutablePointer<Float>
-    public private(set) var binHead = 0
+    public let envCap: Int
+    public let env: UnsafeMutablePointer<Float>
+    public private(set) var envHead = 0, envLen: Int
     var binAcc: Float = 0, binN = 0
     var ctrlPk = 0.0, livePk = 0.0, outPk = 0.0
 
@@ -101,10 +101,11 @@ public final class Processor {
         eng = ScratchEngine(sr: sr, seconds: min(tapeSeconds, maxTape), maxSeconds: maxTape)
         calN = Int((1.5 * sr).rounded())
         calSpeeds = .allocate(capacity: calN / 32 + 8)
-        bins = .allocate(capacity: binCount); bins.initialize(repeating: 0, count: binCount)
-        binSize = max(64, (eng.len + binCount - 1) / binCount)
+        envCap = Int((maxTape * sr / 256).rounded(.up)) + 4
+        env = .allocate(capacity: envCap); env.initialize(repeating: 0, count: envCap)
+        envLen = min(envCap, eng.len / 256 + 2)
     }
-    deinit { calSpeeds.deallocate(); bins.deallocate(); recBuf?.deallocate(); retiredRec?.deallocate() }
+    deinit { calSpeeds.deallocate(); env.deallocate(); recBuf?.deallocate(); retiredRec?.deallocate() }
 
     func applyGate() { let g = max(userGate, 0.1 * toneRef); dec.gate = g; quad.gate = g }
     /// Retune the pilot notches on both channels.
@@ -140,9 +141,9 @@ public final class Processor {
             tapeApplied = tapeTarget
             eng.setTape(seconds: min(tapeTarget, maxTape))
             freezeApplied = false; freezeTarget = false
-            binSize = max(64, (eng.len + binCount - 1) / binCount)
-            for i in 0..<binCount { bins[i] = 0 }
-            binHead = 0; binAcc = 0; binN = 0
+            envLen = min(envCap, eng.len / 256 + 2)
+            for i in 0..<envLen { env[i] = 0 }
+            envHead = 0; binAcc = 0; binN = 0
         }
         if freezeApplied != freezeTarget { freezeApplied = freezeTarget; eng.setFrozen(freezeTarget) }
         if calibrateHandled != calibrateRequests {
@@ -227,7 +228,7 @@ public final class Processor {
             if !eng.frozen {
                 if Float(al) > binAcc { binAcc = Float(al) }
                 binN += 1
-                if binN >= binSize { bins[binHead] = binAcc; binHead = (binHead + 1) % binCount; binAcc = 0; binN = 0 }
+                if binN >= binSize { env[envHead] = binAcc; envHead = (envHead + 1) % envLen; binAcc = 0; binN = 0 }
             }
 
             if calOn {

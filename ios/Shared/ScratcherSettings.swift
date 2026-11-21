@@ -12,6 +12,7 @@ struct ScratcherSettings: Codable, Equatable {
     var loopSec = 4.0            // Loop length; at the tape length it means the whole tape
     var tapeSec = 45.0           // how much live audio is kept to scratch: 45, 120 or 300 s (plugin: up to 120)
     var loopStop = false         // Loop ends: stop like a run-out groove (false: wrap round)
+    var tapeZoom = true          // tape strip: a 10 s window following the needle (false: the whole tape)
     var outGain = 1.0
     // fader
     var faderMode: FaderMode = .both
